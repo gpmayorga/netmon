@@ -154,8 +154,16 @@ def parse_iwpriv_stat(text):
 
 
 # ---- line formatting ----
-def format_mesh_line(host, iface, parsed, timestamp):
-    tags = f"host={escape_tag(host)},iface={escape_tag(iface)}"
+def _host_tags(host, name):
+    """Common host+name tags shared by all eap_* measurements."""
+    tags = f"host={escape_tag(host)}"
+    if name:
+        tags += f",name={escape_tag(name)}"
+    return tags
+
+
+def format_mesh_line(host, name, iface, parsed, timestamp):
+    tags = f"{_host_tags(host, name)},iface={escape_tag(iface)}"
     # Skip empty BSSID/ESSID — happens when the mesh interface isn't connected.
     # InfluxDB rejects empty tag values; an absent tag is the right signal anyway.
     if parsed.get("bssid"):
@@ -173,8 +181,8 @@ def format_mesh_line(host, iface, parsed, timestamp):
     return f"eap_mesh,{tags} {','.join(fields)} {timestamp}"
 
 
-def format_radio_line(host, iface, band, parsed, timestamp):
-    tags = f"host={escape_tag(host)},iface={escape_tag(iface)},band={escape_tag(band)}"
+def format_radio_line(host, name, iface, band, parsed, timestamp):
+    tags = f"{_host_tags(host, name)},iface={escape_tag(iface)},band={escape_tag(band)}"
     fields = []
     int_keys = [
         "temp_c", "tx_success", "tx_fail", "rx_success", "rx_crc_err",
@@ -192,9 +200,9 @@ def format_radio_line(host, iface, band, parsed, timestamp):
     return f"eap_radio,{tags} {','.join(fields)} {timestamp}"
 
 
-def format_vap_line(host, row, timestamp):
+def format_vap_line(host, name, row, timestamp):
     """Per-VAP line from /proc/net/wireless (retry/discard counters)."""
-    tags = f"host={escape_tag(host)},iface={escape_tag(row['iface'])}"
+    tags = f"{_host_tags(host, name)},iface={escape_tag(row['iface'])}"
     fields = [
         f"disc_retry={row['disc_retry']}i",
         f"disc_misc={row['disc_misc']}i",
@@ -209,91 +217,118 @@ def format_vap_line(host, row, timestamp):
     return f"eap_vap,{tags} {','.join(fields)} {timestamp}"
 
 
+def _resolve_hosts(eap_cfg):
+    """Build a list of (host, name) tuples from config. Tolerates the old
+    single-`host` form so a stale config doesn't break the service."""
+    hosts = eap_cfg.get("hosts")
+    if hosts:
+        return [(h["host"], h.get("name") or h["host"]) for h in hosts if h.get("host")]
+    legacy = eap_cfg.get("host")
+    if legacy:
+        return [(legacy, legacy)]
+    return []
+
+
+def poll_one_host(ssh_user_host, password, ssh_port, host, name, commands, timestamp):
+    """Run the command batch on one EAP and return a list of LP lines + summary string."""
+    outputs = run_commands(ssh_user_host, password, commands, timeout_sec=25, port=ssh_port)
+    if not outputs:
+        logging.warning("SSH session to %s failed", host)
+        return [], None
+
+    lines = []
+    idx = 0
+
+    # 1. /proc/net/wireless -> one eap_vap line per interface
+    vap_rows = parse_proc_wireless(outputs[idx]); idx += 1
+    for row in vap_rows:
+        line = format_vap_line(host, name, row, timestamp)
+        if line:
+            lines.append(line)
+
+    # 2. Mesh backhaul interfaces
+    mesh_summary = []
+    for iface in MESH_BACKHAUL_IFACES:
+        parsed = parse_iwconfig(outputs[idx]); idx += 1
+        if not parsed:
+            continue
+        line = format_mesh_line(host, name, iface, parsed, timestamp)
+        if line:
+            lines.append(line)
+            mesh_summary.append(
+                f"{iface} signal={parsed.get('signal_dbm','?')}dBm "
+                f"bitrate={parsed.get('bitrate_mbps','?')}Mbps "
+                f"bssid={parsed.get('bssid','?')}"
+            )
+
+    # 3. Per-radio iwpriv stat
+    radio_summary = []
+    for iface, band in RADIO_PRIMARIES.items():
+        parsed = parse_iwpriv_stat(outputs[idx]); idx += 1
+        if not parsed:
+            continue
+        line = format_radio_line(host, name, iface, band, parsed, timestamp)
+        if line:
+            lines.append(line)
+            radio_summary.append(
+                f"{iface}({band}) PER={parsed.get('tx_per_pct','?')}% "
+                f"temp={parsed.get('temp_c','?')}C MCS={parsed.get('last_tx_mcs','?')}"
+            )
+
+    summary = (f"{len(lines)} points | mesh: {'; '.join(mesh_summary) or 'n/a'} "
+               f"| radios: {'; '.join(radio_summary) or 'n/a'}")
+    return lines, summary
+
+
 def main():
     setup_logging(LOG_NAME)
     logging.info("Starting EAP monitor")
 
-    ssh_user_host = (os.environ.get("EAP_SSH") or "").strip()
     password = (os.environ.get("EAP_SSH_PASSWORD")
                 or os.environ.get("ROUTER_SSH_PASSWORD") or "").strip()
 
-    config = load_config()
-    eap_cfg = config.get("eap", {})
-    host = eap_cfg.get("host", "192.168.0.100")
-    interval = int(eap_cfg.get("interval", 60))
-    ssh_port = eap_cfg.get("ssh_port")
+    router_target = (os.environ.get("ROUTER_SSH") or "").strip()
+    user = router_target.split("@", 1)[0] if "@" in router_target else None
+    eap_user_override = (os.environ.get("EAP_SSH") or "").strip()
 
-    if not ssh_user_host:
-        router_target = (os.environ.get("ROUTER_SSH") or "").strip()
-        if "@" in router_target:
-            user = router_target.split("@", 1)[0]
-            ssh_user_host = f"{user}@{host}"
-        else:
-            logging.error("EAP_SSH not set and ROUTER_SSH missing user@host; cannot proceed")
-            while True:
-                time.sleep(3600)
-
-    logging.info("EAP target: %s (auth: %s)", ssh_user_host,
-                 "password" if password else "key-based")
-
-    # Build the command batch once. We run everything in a single SSH session.
+    # Command batch is the same per host — build it once.
     commands = ["cat /proc/net/wireless"]
     commands += [f"iwconfig {iface}" for iface in MESH_BACKHAUL_IFACES]
     commands += [f"iwpriv {iface} stat" for iface in RADIO_PRIMARIES]
 
     while True:
         try:
-            outputs = run_commands(ssh_user_host, password, commands, timeout_sec=25, port=ssh_port)
-            if not outputs:
-                logging.warning("SSH session to %s failed", host)
+            config = load_config()
+            eap_cfg = config.get("eap", {})
+            interval = int(eap_cfg.get("interval", 60))
+            ssh_port = eap_cfg.get("ssh_port")
+            hosts = _resolve_hosts(eap_cfg)
+
+            if not hosts:
+                logging.error("No EAP hosts configured under eap.hosts; sleeping")
+                time.sleep(interval)
+                continue
+            if not user and not eap_user_override:
+                logging.error("Neither EAP_SSH nor ROUTER_SSH has user@host; cannot derive SSH user")
                 time.sleep(interval)
                 continue
 
             timestamp = ts_now()
-            lines = []
-            idx = 0
+            all_lines = []
+            for host, name in hosts:
+                # EAP_SSH env var, if set, wins for ALL hosts (single override target).
+                # Otherwise we derive user@host per-host from the router user.
+                ssh_user_host = eap_user_override or f"{user}@{host}"
+                lines, summary = poll_one_host(
+                    ssh_user_host, password, ssh_port,
+                    host, name, commands, timestamp,
+                )
+                all_lines.extend(lines)
+                if summary:
+                    logging.info("EAP %s (%s): %s", name, host, summary)
 
-            # 1. /proc/net/wireless -> one eap_vap line per interface
-            vap_rows = parse_proc_wireless(outputs[idx]); idx += 1
-            for row in vap_rows:
-                line = format_vap_line(host, row, timestamp)
-                if line:
-                    lines.append(line)
-
-            # 2. Mesh backhaul interfaces
-            mesh_summary = []
-            for iface in MESH_BACKHAUL_IFACES:
-                parsed = parse_iwconfig(outputs[idx]); idx += 1
-                if not parsed:
-                    continue
-                line = format_mesh_line(host, iface, parsed, timestamp)
-                if line:
-                    lines.append(line)
-                    mesh_summary.append(
-                        f"{iface} signal={parsed.get('signal_dbm','?')}dBm "
-                        f"snr={parsed.get('snr','?')} bssid={parsed.get('bssid','?')}"
-                    )
-
-            # 3. Per-radio iwpriv stat
-            radio_summary = []
-            for iface, band in RADIO_PRIMARIES.items():
-                parsed = parse_iwpriv_stat(outputs[idx]); idx += 1
-                if not parsed:
-                    continue
-                line = format_radio_line(host, iface, band, parsed, timestamp)
-                if line:
-                    lines.append(line)
-                    radio_summary.append(
-                        f"{iface}({band}) PER={parsed.get('tx_per_pct','?')}% "
-                        f"temp={parsed.get('temp_c','?')}C MCS={parsed.get('last_tx_mcs','?')}"
-                    )
-
-            if lines:
-                influx_write(lines)
-            logging.info("EAP %s: %d points | mesh: %s | radios: %s",
-                         host, len(lines),
-                         "; ".join(mesh_summary) or "n/a",
-                         "; ".join(radio_summary) or "n/a")
+            if all_lines:
+                influx_write(all_lines)
         except Exception as e:
             logging.error("EAP monitor cycle error: %s", e, exc_info=True)
 

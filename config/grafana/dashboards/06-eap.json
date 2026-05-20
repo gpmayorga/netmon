@@ -1,5 +1,16 @@
 {
-  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "annotations": {
+    "list": [
+      { "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" },
+      {
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "enable": true,
+        "iconColor": "green",
+        "name": "Config Changes",
+        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netmon_event\" and r._field == \"description\")\n  |> keep(columns: [\"_time\", \"_value\", \"category\", \"source\"])\n  |> map(fn: (r) => ({ r with text: r._value, tags: r.category + \",\" + r.source }))" }
+      }
+    ]
+  },
   "editable": true,
   "graphTooltip": 1,
   "panels": [
@@ -48,7 +59,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "dB", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "spanNulls": 60000 }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 15 }, { "color": "green", "value": 25 }] }, "custom": { "thresholdsStyle": { "mode": "dashed" } } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max", "last"], "placement": "right" } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r._field == \"snr\")\n  |> group(columns: [\"host\", \"iface\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r._field == \"snr\")\n  |> group(columns: [\"name\", \"iface\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Mesh Signal & Noise Over Time",
@@ -57,7 +68,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "dBm", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max"], "placement": "right" } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and (r._field == \"signal_dbm\" or r._field == \"noise_dbm\"))\n  |> group(columns: [\"host\", \"iface\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and (r._field == \"signal_dbm\" or r._field == \"noise_dbm\"))\n  |> group(columns: [\"name\", \"iface\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Radio TX Packet Error Rate",
@@ -67,7 +78,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max", "last"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"tx_per_pct\")\n  |> group(columns: [\"host\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"tx_per_pct\")\n  |> group(columns: [\"name\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Radio TX Fail Rate (deltas)",
@@ -77,7 +88,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "pps", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 25 } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"tx_fail\")\n  |> group(columns: [\"host\", \"band\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"tx_fail\")\n  |> group(columns: [\"name\", \"band\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Radio Temperature",
@@ -86,7 +97,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 65 }, { "color": "red", "value": 80 }] }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"temp_c\")\n  |> group(columns: [\"host\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"temp_c\")\n  |> group(columns: [\"name\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Last TX MCS Index",
@@ -96,7 +107,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 11, "custom": { "drawStyle": "line", "lineWidth": 2, "stepLine": true } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["last", "min"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"last_tx_mcs\")\n  |> group(columns: [\"host\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"last_tx_mcs\")\n  |> group(columns: [\"name\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Per-VAP Retry Discard Deltas",
@@ -106,7 +117,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5 } } },
       "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "right" } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_vap\" and r._field == \"disc_retry\")\n  |> group(columns: [\"host\", \"iface\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_vap\" and r._field == \"disc_retry\")\n  |> group(columns: [\"name\", \"iface\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
     },
     {
       "title": "Current EAP Snapshot",
@@ -114,7 +125,7 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "options": { "showHeader": true },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and (r._field == \"temp_c\" or r._field == \"tx_per_pct\" or r._field == \"rx_per_pct\" or r._field == \"last_tx_mcs\"))\n  |> last()\n  |> pivot(rowKey: [\"host\", \"band\", \"iface\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"host\", \"band\", \"iface\", \"temp_c\", \"tx_per_pct\", \"rx_per_pct\", \"last_tx_mcs\"])", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and (r._field == \"temp_c\" or r._field == \"tx_per_pct\" or r._field == \"rx_per_pct\" or r._field == \"last_tx_mcs\"))\n  |> last()\n  |> pivot(rowKey: [\"name\", \"band\", \"iface\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"name\", \"band\", \"iface\", \"temp_c\", \"tx_per_pct\", \"rx_per_pct\", \"last_tx_mcs\"])", "refId": "A" }]
     }
   ],
   "refresh": "1m",

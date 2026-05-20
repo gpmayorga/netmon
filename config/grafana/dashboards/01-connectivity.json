@@ -9,6 +9,13 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "enable": true,
+        "iconColor": "green",
+        "name": "Config Changes",
+        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netmon_event\" and r._field == \"description\")\n  |> keep(columns: [\"_time\", \"_value\", \"category\", \"source\"])\n  |> map(fn: (r) => ({ r with text: r._value, tags: r.category + \",\" + r.source }))" }
       }
     ]
   },
