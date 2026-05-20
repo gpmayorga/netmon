@@ -174,9 +174,9 @@ def main():
                 continue
             servers.append({
                 "id": extra,
-                "sponsor": "(extra)",
-                "city": "(extra)",
-                "country": "",
+                "sponsor": "extra",
+                "city": "unknown",
+                "country": "unknown",
                 "distance_km": 0.0,
             })
 
