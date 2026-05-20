@@ -1,0 +1,128 @@
+{
+  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "Mesh Backhaul SNR (apclix0, 5 GHz) — UNRELIABLE",
+      "description": "WARNING: The MediaTek MT7915 driver in the EAP610 reports a hardcoded noise floor (~-57 dBm across all bands/interfaces) instead of measuring it. SNR = signal - noise becomes a near-constant transform of signal alone. Cross-check: the mesh negotiates >1 Gbps bitrate, which is incompatible with a real 2-4 dB SNR. Use this panel only to detect changes in signal strength, not absolute SNR health. Real indicators of mesh problems live in 'Radio TX Fail Rate' and 'Per-VAP Retry Discard Deltas' below.",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dB", "min": 0, "max": 40, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 10 }, { "color": "yellow", "value": 15 }, { "color": "green", "value": 25 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdLabels": true },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r.iface == \"apclix0\" and r._field == \"snr\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Mesh Signal",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dBm", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": -75 }, { "color": "yellow", "value": -65 }, { "color": "green", "value": -55 }] } } },
+      "options": { "graphMode": "area", "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r.iface == \"apclix0\" and r._field == \"signal_dbm\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Mesh Noise",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dBm", "color": { "mode": "fixed", "fixedColor": "purple" } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r.iface == \"apclix0\" and r._field == \"noise_dbm\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Mesh Bitrate",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 200 }, { "color": "green", "value": 600 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r.iface == \"apclix0\" and r._field == \"bitrate_mbps\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Mesh SNR Over Time",
+      "description": "Mesh backhaul SNR per EAP host. Drops below 15 dB correlate strongly with video-call cuts in mesh deployments.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dB", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "spanNulls": 60000 }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 15 }, { "color": "green", "value": 25 }] }, "custom": { "thresholdsStyle": { "mode": "dashed" } } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max", "last"], "placement": "right" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r._field == \"snr\")\n  |> group(columns: [\"host\", \"iface\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Mesh Signal & Noise Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dBm", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max"], "placement": "right" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and (r._field == \"signal_dbm\" or r._field == \"noise_dbm\"))\n  |> group(columns: [\"host\", \"iface\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Radio TX Packet Error Rate",
+      "description": "Cumulative since boot. High Tx PER (>5%) on the 2.4G radio is normal under load; a sudden delta jump indicates instantaneous failure. Use the rate panel below for live signal.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 21 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max", "last"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"tx_per_pct\")\n  |> group(columns: [\"host\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Radio TX Fail Rate (deltas)",
+      "description": "Per-second growth of `tx_fail` counter — the live failure signal. Spikes here mean retransmits are happening NOW, unlike the cumulative PER above.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 21 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "pps", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 25 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"tx_fail\")\n  |> group(columns: [\"host\", \"band\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Radio Temperature",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 65 }, { "color": "red", "value": 80 }] }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"temp_c\")\n  |> group(columns: [\"host\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Last TX MCS Index",
+      "description": "Higher = more efficient modulation. Falls under bad RF conditions (interference, distance, retries).",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 11, "custom": { "drawStyle": "line", "lineWidth": 2, "stepLine": true } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["last", "min"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and r._field == \"last_tx_mcs\")\n  |> group(columns: [\"host\", \"band\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Per-VAP Retry Discard Deltas",
+      "description": "Per-second growth of /proc/net/wireless retry counters per VAP (Virtual AP / SSID). Use to see which SSID is experiencing the most retries.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 34 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "right" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_vap\" and r._field == \"disc_retry\")\n  |> group(columns: [\"host\", \"iface\"])\n  |> derivative(unit: 1s, nonNegative: true)\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Current EAP Snapshot",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_radio\" and (r._field == \"temp_c\" or r._field == \"tx_per_pct\" or r._field == \"rx_per_pct\" or r._field == \"last_tx_mcs\"))\n  |> last()\n  |> pivot(rowKey: [\"host\", \"band\", \"iface\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"host\", \"band\", \"iface\", \"temp_c\", \"tx_per_pct\", \"rx_per_pct\", \"last_tx_mcs\"])", "refId": "A" }]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["netmon", "eap", "mesh"],
+  "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "EAP Health & Mesh Backhaul",
+  "uid": "netmon-eap",
+  "version": 1
+}

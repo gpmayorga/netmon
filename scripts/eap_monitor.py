@@ -221,6 +221,7 @@ def main():
     eap_cfg = config.get("eap", {})
     host = eap_cfg.get("host", "192.168.0.100")
     interval = int(eap_cfg.get("interval", 60))
+    ssh_port = eap_cfg.get("ssh_port")
 
     if not ssh_user_host:
         router_target = (os.environ.get("ROUTER_SSH") or "").strip()
@@ -242,7 +243,7 @@ def main():
 
     while True:
         try:
-            outputs = run_commands(ssh_user_host, password, commands, timeout_sec=25)
+            outputs = run_commands(ssh_user_host, password, commands, timeout_sec=25, port=ssh_port)
             if not outputs:
                 logging.warning("SSH session to %s failed", host)
                 time.sleep(interval)

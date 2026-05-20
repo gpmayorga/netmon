@@ -1,9 +1,10 @@
 [Unit]
-Description=Run NetMon speedtest every hour
+Description=Tick speedtest runner every 5 minutes (script decides whether to actually run)
 
 [Timer]
-OnCalendar=*:05:00
-RandomizedDelaySec=120
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=15
 Persistent=true
 
 [Install]

@@ -20,9 +20,12 @@ SSH_BASE_OPTS = [
 ]
 
 
-def build_ssh_cmd(ssh_target, password):
-    """Build base SSH command list. With password we use pexpect; without we use key auth."""
+def build_ssh_cmd(ssh_target, password, port=None):
+    """Build base SSH command list. With password we use pexpect; without we use key auth.
+    Pass a non-default port (Omada site-wide setting) explicitly."""
     cmd = ["ssh"] + SSH_BASE_OPTS
+    if port:
+        cmd.extend(["-p", str(port)])
     if not password:
         cmd.extend(["-o", "BatchMode=yes"])
     cmd.append(ssh_target)
@@ -103,14 +106,14 @@ def _run_command_key(ssh_cmd, command, timeout=12):
         return None
 
 
-def run_commands(ssh_target, password, commands, timeout_sec=20):
+def run_commands(ssh_target, password, commands, timeout_sec=20, port=None):
     """
     Run one or more commands on a remote SSH target.
     Returns a list of stdout strings (one per command), or None on session failure.
     """
     if not ssh_target:
         return None
-    ssh_cmd = build_ssh_cmd(ssh_target, password)
+    ssh_cmd = build_ssh_cmd(ssh_target, password, port=port)
     if password:
         return _run_commands_pexpect(ssh_cmd + ["-tt"], password, commands, timeout_sec=timeout_sec)
     outputs = []

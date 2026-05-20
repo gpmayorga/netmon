@@ -45,8 +45,24 @@ ip_check:
 
 # Speedtest
 speedtest:
-  interval: 3600      # seconds (1 hour)
-  timeout: 120        # seconds max for a single test
+  # The timer fires every 5 min; speedtest_runner.py decides whether to run
+  # based on the schedule below. A test saturates the WAN for ~20s, so the
+  # work window is intentionally sparse and predictable; the night window is
+  # aggressive because nobody is there.
+  timeout: 120
+  schedules:
+    work:    { window: "09:00-17:00", every_min: 180 }  # 3 tests/day during work hours
+    evening: { window: "17:00-22:00", every_min: 60 }   # hourly as the office empties
+    night:   { window: "22:00-09:00", every_min: 15 }   # aggressive while idle
+  # Pinned servers — speedtest_runner.py picks one at random each run. Picked
+  # by scripts/speedtest_benchmark.py on 2026-05-20 across the closest 10
+  # Ookla servers. Leave empty to let speedtest-cli auto-pick (NOT recommended —
+  # historically lands on bandwidth-capped servers like the now-retired id=1680
+  # 'Madrid' that returned ~10 Mbps regardless of link capacity).
+  servers:
+    - 14979   # Orange, Madrid — best download (60.8 Mbps in benchmark)
+    - 44255   # Citelia, Madrid — best upload (105.8) + lowest latency (31.5 ms)
+    - 63275   # Jazztel, Valladolid — geographic diversity
 
 # WiFi client monitoring (wlan0)
 wifi_station:
@@ -75,6 +91,7 @@ ap_labels:
 router:
   interval: 60          # seconds between WAN status polls
   sysinfo_interval: 1   # poll system info every Nth cycle (1 = every 60s)
+  ssh_port: 2222        # Omada Cloud site-wide SSH port (default 22 was changed)
 
 # Router-side ping diagnostics (triggered by ping_monitor incidents).
 # The Omada CLI on this firmware accepts ONLY `ping <ip>` (no -I, -c, -W),
@@ -93,7 +110,10 @@ wan_ping:
 # Credentials default to ROUTER_SSH_* (same site account); override with EAP_SSH_* in secrets.env
 eap:
   interval: 60
-  host: "192.168.0.100"
+  ssh_port: 2222        # Omada site-wide SSH port (same as router)
+  hosts:
+    - { host: "192.168.0.100", name: "planta-baja" }
+    - { host: "192.168.0.101", name: "planta-1" }
 
 # Syslog receiver (for Omada router logs)
 syslog:

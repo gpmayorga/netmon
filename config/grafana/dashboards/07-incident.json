@@ -1,0 +1,125 @@
+{
+  "annotations": {
+    "list": [
+      { "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" },
+      {
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "enable": true,
+        "iconColor": "red",
+        "name": "Ping Incidents",
+        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> keep(columns: [\"_time\", \"_value\", \"target_name\", \"type\"])\n  |> map(fn: (r) => ({ r with text: r.target_name + \" \" + r.type + \" (max=\" + string(v: r._value) + \"ms)\", tags: r.type })) " }
+      }
+    ]
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "Incidents (last 24h)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "orange", "value": 10 }, { "color": "red", "value": 50 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["sum"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> count()\n  |> group()\n  |> sum()", "refId": "A" }]
+    },
+    {
+      "title": "Loss Incidents vs Spike Incidents (24h)",
+      "type": "piechart",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "displayLabels": ["name", "value"] },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> group(columns: [\"type\"])\n  |> count()", "refId": "A" }]
+    },
+    {
+      "title": "Mesh SNR Now",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dB", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 10 }, { "color": "yellow", "value": 15 }, { "color": "green", "value": 25 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r.iface == \"apclix0\" and r._field == \"snr\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Pi WiFi Signal Now",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dBm", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": -80 }, { "color": "yellow", "value": -70 }, { "color": "green", "value": -55 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"signal_dbm\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Latency — All Targets (red dashes = incidents)",
+      "description": "Per-target ping latency from the Pi. Annotations (red) mark moments when an incident was triggered. Gateway/EAP staying flat while internet targets all spike together = WAN issue. Only one internet target spiking = transient (target-side or sticky session). Multiple but not all internet targets spiking = likely one WAN degraded (load balancer hash).",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 5, "pointSize": 4 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max", "p99"], "placement": "right" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"rtt_max\")\n  |> group(columns: [\"target_name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Packet Loss — All Targets",
+      "description": "Concurrent loss across multiple internet targets (1.1.1.1, 8.8.8.8, 9.9.9.9, 4.2.2.2) is the cleanest signal of an upstream issue. Loss only on gateway/eap = local/mesh problem.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 0 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "right" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"loss_pct\")\n  |> filter(fn: (r) => r._value > 0.0)\n  |> group(columns: [\"target_name\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Pi-side vs Router-side Ping (during incidents)",
+      "description": "Each red dot is router_ping (from router during an incident). If router latency is normal while Pi-side spiked = problem is Pi-to-router (WiFi/mesh). If both spike = upstream of router.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "pointSize": 6 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"rtt_avg\" and (r.target_name == \"dns_google\" or r.target_name == \"dns_cloudflare\"))\n  |> group(columns: [\"target_name\"])\n  |> map(fn: (r) => ({ r with _field: \"Pi → \" + r.target_name }))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" },
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_ping\" and r._field == \"rtt_avg\")\n  |> group(columns: [\"target\"])\n  |> map(fn: (r) => ({ r with _field: \"Router → \" + r.target }))", "refId": "B" }
+      ]
+    },
+    {
+      "title": "Mesh Backhaul SNR (signal-as-proxy, see note)",
+      "description": "NOTE: SNR absolute value is unreliable on EAP610 (MediaTek driver reports hardcoded noise). Use it to spot RELATIVE drops during incident windows — a sudden dip from 'baseline' to lower is signal. Persistent low values do not mean mesh is broken; cross-check with mesh bitrate and EAP latency on the connectivity dashboard.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dB", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 15 }, { "color": "green", "value": 25 }] } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"eap_mesh\" and r._field == \"snr\")\n  |> group(columns: [\"host\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Pi WiFi Signal & TX Bitrate",
+      "description": "If the Pi's own WiFi signal drops or TX bitrate collapses during an incident, the issue is local to the Pi's WiFi adapter — not representative of other clients.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } }, "overrides": [{ "matcher": { "id": "byFrameRefID", "options": "B" }, "properties": [{ "id": "unit", "value": "Mbps" }, { "id": "custom.axisPlacement", "value": "right" }] }, { "matcher": { "id": "byFrameRefID", "options": "A" }, "properties": [{ "id": "unit", "value": "dBm" }] }] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"signal_dbm\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({ r with _field: \"signal_dbm\" }))", "refId": "A" },
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"tx_bitrate\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> map(fn: (r) => ({ r with _field: \"tx_bitrate\" }))", "refId": "B" }
+      ]
+    },
+    {
+      "title": "Recent Incidents",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 37 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "_time", "desc": true }] },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and (r._field == \"rtt_max\" or r._field == \"loss_pct\" or r._field == \"jitter\"))\n  |> pivot(rowKey: [\"_time\", \"target_name\", \"type\", \"target\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"_time\", \"target_name\", \"type\", \"rtt_max\", \"loss_pct\", \"jitter\"])\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 100)", "refId": "A" }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["netmon", "incident", "troubleshoot"],
+  "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Videocall Incident Troubleshooter",
+  "uid": "netmon-incident",
+  "version": 1
+}

@@ -94,21 +94,21 @@ def parse_system_info(output):
     return result
 
 
-def get_wan_status(ssh_target, password):
+def get_wan_status(ssh_target, password, port=None):
     """Get WAN port status (UP/DOWN) for ports 1-3."""
     commands = [f"show interface switchport {p}" for p in (1, 2, 3)]
-    outputs = run_commands(ssh_target, password, commands, timeout_sec=15)
+    outputs = run_commands(ssh_target, password, commands, timeout_sec=15, port=port)
     if not outputs:
         return None
     result = {}
-    for port, text in zip((1, 2, 3), outputs):
-        result[f"port{port}"] = _port_status_from_text(text)
+    for port_num, text in zip((1, 2, 3), outputs):
+        result[f"port{port_num}"] = _port_status_from_text(text)
     return result if any(v is not None for v in result.values()) else None
 
 
-def get_system_info(ssh_target, password):
+def get_system_info(ssh_target, password, port=None):
     """Get router system info (CPU, memory, uptime, firmware, temp)."""
-    outputs = run_commands(ssh_target, password, ["show system-info"], timeout_sec=15)
+    outputs = run_commands(ssh_target, password, ["show system-info"], timeout_sec=15, port=port)
     if not outputs:
         return None
     return parse_system_info(outputs[0]) or None
@@ -171,12 +171,13 @@ def main():
             router_cfg = config.get("router", {})
             interval = int(router_cfg.get("interval", 60))
             sysinfo_interval = int(router_cfg.get("sysinfo_interval", 1))
+            ssh_port = router_cfg.get("ssh_port")
 
             timestamp = ts_now()
             lines = []
 
             # WAN port status
-            wan = get_wan_status(ssh_target, password)
+            wan = get_wan_status(ssh_target, password, port=ssh_port)
             if wan:
                 wan_line = format_wan_line(wan, timestamp)
                 if wan_line:
@@ -201,7 +202,7 @@ def main():
 
             # System info — cadence governed by sysinfo_interval (cycles).
             if cycle_count % max(sysinfo_interval, 1) == 0:
-                info = get_system_info(ssh_target, password)
+                info = get_system_info(ssh_target, password, port=ssh_port)
                 if info:
                     info_line = format_sysinfo_line(info, timestamp)
                     if info_line:

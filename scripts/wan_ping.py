@@ -136,12 +136,15 @@ def main():
         return 1
 
     target = cfg.get("target", "8.8.8.8")
+    targets = cfg.get("targets") or [target]
     # Omada CLI ping accepts ONLY the destination address — no flags. It sends
     # 4 packets by default. To probe multiple targets, send multiple commands.
-    targets = cfg.get("targets") or [target]
+    # Reuse the router's SSH port from the router section.
+    router_cfg = config.get("router", {})
+    ssh_port = router_cfg.get("ssh_port")
     commands = [f"ping {t}" for t in targets]
     logging.info("Running router-side pings (reason=%s, targets=%s)", args.reason, targets)
-    outputs = run_commands(ssh_target, password, commands, timeout_sec=30)
+    outputs = run_commands(ssh_target, password, commands, timeout_sec=30, port=ssh_port)
     _mark_run()
     if outputs is None:
         logging.error("SSH session failed")
