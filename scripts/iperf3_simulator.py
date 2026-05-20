@@ -106,6 +106,42 @@ def format_iperf3_line(results, server, duration, parallel, timestamp):
     return f"iperf3,{tags} {','.join(fields)} {timestamp}"
 
 
+def classify_incident(results, jitter_threshold, loss_threshold):
+    """Return None or a string describing why this run breached thresholds.
+
+    Mirrors ping_monitor.classify_incident so the dashboard can render iperf3
+    incidents alongside ping incidents using the same vocabulary.
+    """
+    jitter = results.get("jitter_ms", 0)
+    loss = results.get("loss_pct", 0)
+    has_jitter = jitter >= jitter_threshold
+    has_loss = loss >= loss_threshold
+    if has_jitter and has_loss:
+        return "jitter+loss"
+    if has_jitter:
+        return "jitter_spike"
+    if has_loss:
+        return "loss"
+    return None
+
+
+def format_iperf3_incident_line(results, server, kind, jitter_threshold,
+                                loss_threshold, incident_id, timestamp):
+    """Format an iperf3_incident line — analogous to ping_incident."""
+    tags = f"server={escape_tag(server)},type={escape_tag(kind)}"
+    fields = (
+        f"jitter_ms={results.get('jitter_ms', 0)},"
+        f"loss_pct={results.get('loss_pct', 0)},"
+        f"recv_mbps={results.get('recv_mbps', 0)},"
+        f"lost_packets={results.get('lost_packets', 0)}i,"
+        f"total_packets={results.get('total_packets', 0)}i,"
+        f"jitter_threshold={jitter_threshold},"
+        f"loss_threshold={loss_threshold},"
+        f"incident_id=\"{incident_id}\""
+    )
+    return f"iperf3_incident,{tags} {fields} {timestamp}"
+
+
 def main():
     setup_logging(LOG_NAME)
     logging.info("Starting iperf3 load simulation")
@@ -117,6 +153,9 @@ def main():
     bandwidth = iperf_cfg.get("bandwidth", "4M")
     parallel = iperf_cfg.get("parallel", 5)
     bucket = config.get("influxdb", {}).get("bucket_speedtest", "netmon_speedtest")
+    thresholds = config.get("thresholds", {})
+    jitter_threshold = thresholds.get("jitter_warn_ms", 30)
+    loss_threshold = thresholds.get("loss_warn_pct", 1)
 
     if not servers:
         logging.error("iperf3.servers is empty; nothing to do")
@@ -144,17 +183,35 @@ def main():
     if data:
         results = parse_iperf3_results(data)
         line = format_iperf3_line(results, server_used, duration, parallel, timestamp)
+        lines = [line] if line else []
 
-        if line:
-            success = influx_write([line], bucket=bucket)
+        kind = classify_incident(results, jitter_threshold, loss_threshold)
+        if kind:
+            incident_id = f"{timestamp}-{server_used}"
+            lines.append(format_iperf3_incident_line(
+                results, server_used, kind,
+                jitter_threshold, loss_threshold,
+                incident_id, timestamp,
+            ))
+            logging.warning(
+                "INCIDENT (%s) iperf3 → %s:%d: jitter=%.2f ms (threshold %s), "
+                "loss=%.3f%% (threshold %s)",
+                kind, server_used, port_used,
+                results.get("jitter_ms", 0), jitter_threshold,
+                results.get("loss_pct", 0), loss_threshold,
+            )
+
+        if lines:
+            success = influx_write(lines, bucket=bucket)
             if success:
                 logging.info("iperf3 complete via %s:%d: send=%.1f Mbps, "
-                             "recv=%.1f Mbps, jitter=%.2f ms, loss=%.2f%%",
+                             "recv=%.1f Mbps, jitter=%.2f ms, loss=%.2f%%%s",
                              server_used, port_used,
                              results.get("send_mbps", 0),
                              results.get("recv_mbps", 0),
                              results.get("jitter_ms", 0),
-                             results.get("loss_pct", 0))
+                             results.get("loss_pct", 0),
+                             f" [INCIDENT: {kind}]" if kind else "")
             else:
                 logging.error("Failed to write iperf3 results")
     else:

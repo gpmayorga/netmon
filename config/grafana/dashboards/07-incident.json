@@ -22,6 +22,13 @@
         "iconColor": "blue",
         "name": "iperf3 Test Windows",
         "target": { "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"iperf3\")\n  |> filter(fn: (r) => r._field == \"jitter_ms\" or r._field == \"loss_pct\" or r._field == \"recv_mbps\" or r._field == \"duration_sec\")\n  |> pivot(rowKey: [\"_time\", \"server\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> map(fn: (r) => ({\n      time: r._time,\n      timeEnd: time(v: int(v: r._time) + int(v: r.duration_sec) * 1000000000),\n      text: \"iperf3 → \" + r.server + \": recv=\" + string(v: r.recv_mbps) + \" Mbps, jitter=\" + string(v: r.jitter_ms) + \" ms, loss=\" + string(v: r.loss_pct) + \"%\",\n      tags: \"iperf3\"\n  }))" }
+      },
+      {
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "enable": true,
+        "iconColor": "red",
+        "name": "iperf3 Incidents",
+        "target": { "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"iperf3_incident\" and r._field == \"jitter_ms\")\n  |> keep(columns: [\"_time\", \"_value\", \"server\", \"type\"])\n  |> map(fn: (r) => ({ r with text: \"iperf3 BREACH (\" + r.type + \") → \" + r.server + \" jitter=\" + string(v: r._value) + \" ms\", tags: r.type }))" }
       }
     ]
   },
