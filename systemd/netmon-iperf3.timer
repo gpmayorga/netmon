@@ -1,9 +1,11 @@
 [Unit]
-Description=Run NetMon iperf3 load test on Mon/Wed/Fri at 2 AM
+Description=Run NetMon iperf3 video-call load simulation (every 30 min)
 
 [Timer]
-OnCalendar=Mon,Wed,Fri *-*-* 02:00:00
-RandomizedDelaySec=300
+# Frequent enough to catch intermittent daytime drops (the symptom we're chasing),
+# light enough on the public iperf3 server (15 Mbps × 30s = ~56 MB per run).
+OnCalendar=*-*-* *:00/30:00
+RandomizedDelaySec=60
 Persistent=true
 
 [Install]

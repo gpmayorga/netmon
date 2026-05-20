@@ -136,25 +136,30 @@ snmp:
     if_out_octets_wan2: "1.3.6.1.2.1.2.2.1.16.3"
 
 # iperf3 load simulation
-# IMPORTANT: schedule is controlled by systemd/netmon-iperf3.timer (Mon/Wed/Fri 02:00),
+# IMPORTANT: schedule is controlled by systemd/netmon-iperf3.timer (every 30 min by default),
 # not by this file. To change the schedule, edit the .timer unit and run install.sh.
 iperf3:
-  # Where to send the simulated load. Loopback only validates the script;
-  # it does NOT exercise the WAN. To test the actual coworking link, point
-  # this at one of:
-  #   - a Tailscale peer on a different network (best — measures real WAN)
-  #   - a public iperf3 server (e.g. iperf.it-north.net, see iperf3serverlist.net)
-  #   - an iperf3 server on a cloud VM you own
-  # Loopback ("127.0.0.1") is the default so the simulator works out of the box.
-  server: "127.0.0.1"
-  port: 5201
+  # Pool of public iperf3 servers — the simulator picks one at random per run,
+  # falling back to the next if the chosen server is busy (public iperf3 servers
+  # only accept one client per port at a time). Picked 2026-05-20 by probing
+  # ~30 EU candidates and keeping the survivors that pass both TCP ≥15 Mbps and
+  # a UDP 5×3M test. Diversity here is what keeps "server is having a bad
+  # afternoon" from looking like "the Eito WAN is broken":
+  #   - moji.fr        — Paris, AS200780 (Moji)        — baseline ~0.74 ms jitter
+  #   - ping.online.net— Paris, AS12876  (Scaleway)    — baseline tbd
+  #   - clouvider.net  — Frankfurt, AS62240 (Clouvider)— baseline ~1.43 ms jitter
+  # Public-server etiquette: keep total bw ~= 15 Mbps and duration <= 30s.
+  servers:
+    - { host: "iperf3.moji.fr",              port: 5200 }
+    - { host: "ping.online.net",             port: 5202 }
+    - { host: "fra.speedtest.clouvider.net", port: 5201 }
 
-  # Test profile: 30 simultaneous UDP streams at ~4 Mbps each = ~120 Mbps.
-  # Approximates "30 devices in 3-5 HD video calls" per the diagnosis brief.
-  # Reduce parallel/bandwidth on slow links to avoid drowning real users.
-  duration: 60            # seconds per test run
-  bandwidth: "4M"         # per-stream UDP bandwidth (4 Mbps ~= 1 HD video call)
-  parallel: 30            # number of simultaneous streams
+  # Test profile: 5 simultaneous UDP streams at 3 Mbps each = 15 Mbps total.
+  # Approximates "5 simultaneous HD video calls" per the diagnosis brief —
+  # enough load to provoke jitter/loss on a degraded WAN without saturating it.
+  duration: 30            # seconds per test run
+  bandwidth: "3M"         # per-stream UDP bandwidth (3 Mbps ~= 1 HD video call)
+  parallel: 5             # number of simultaneous streams
 
 # Alert thresholds (used by Grafana alert rules)
 thresholds:

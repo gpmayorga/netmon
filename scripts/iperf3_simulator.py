@@ -7,27 +7,12 @@ Designed to run as a oneshot systemd service triggered by a timer (nightly).
 
 import json
 import logging
+import random
 import subprocess
-import time
 
 from common import load_config, influx_write, setup_logging, escape_tag, ts_now
 
 LOG_NAME = "iperf3_sim"
-
-
-def start_iperf3_server(port=5201):
-    """Start a local iperf3 server (daemon mode, one-off)."""
-    try:
-        subprocess.run(
-            ["iperf3", "-s", "-D", "-1", "-p", str(port)],
-            timeout=5,
-            capture_output=True,
-        )
-        time.sleep(1)  # Let server start
-        return True
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        logging.warning("Failed to start iperf3 server: %s", e)
-        return False
 
 
 def run_iperf3_test(server, port, duration, bandwidth, parallel):
@@ -52,17 +37,18 @@ def run_iperf3_test(server, port, duration, bandwidth, parallel):
         )
         data = json.loads(result.stdout)
 
-        # Check for iperf3 error
+        # iperf3 returns a structured error (e.g. "the server is busy running a test")
+        # when a public server's slot is locked. Caller treats this as retryable.
         if "error" in data:
-            logging.error("iperf3 error: %s", data["error"])
+            logging.warning("iperf3 rejected by %s:%d — %s", server, port, data["error"])
             return None
         return data
 
     except subprocess.TimeoutExpired:
-        logging.error("iperf3 test timed out after %ds", duration + 30)
+        logging.error("iperf3 test timed out after %ds (server=%s:%d)", duration + 30, server, port)
         return None
     except json.JSONDecodeError as e:
-        logging.error("Failed to parse iperf3 output: %s", e)
+        logging.error("Failed to parse iperf3 output from %s:%d: %s", server, port, e)
         return None
     except FileNotFoundError:
         logging.error("iperf3 not found - install with: apt install iperf3")
@@ -126,36 +112,45 @@ def main():
 
     config = load_config()
     iperf_cfg = config.get("iperf3", {})
-    server = iperf_cfg.get("server", "127.0.0.1")
-    port = iperf_cfg.get("port", 5201)
+    servers = iperf_cfg.get("servers", [])
     duration = iperf_cfg.get("duration", 60)
     bandwidth = iperf_cfg.get("bandwidth", "4M")
     parallel = iperf_cfg.get("parallel", 5)
     bucket = config.get("influxdb", {}).get("bucket_speedtest", "netmon_speedtest")
 
-    # If testing against localhost, start a local server
-    if server in ("127.0.0.1", "localhost", "::1"):
-        logging.info("Starting local iperf3 server on port %d", port)
-        if not start_iperf3_server(port):
-            logging.error("Cannot start local iperf3 server")
-            return
+    if not servers:
+        logging.error("iperf3.servers is empty; nothing to do")
+        return
 
-    logging.info("Running iperf3: server=%s, port=%d, duration=%ds, "
-                 "bandwidth=%s, parallel=%d",
-                 server, port, duration, bandwidth, parallel)
+    # Shuffle so each run picks a random primary, but fall through the rest if
+    # the chosen public server is slot-locked ("server is busy running a test").
+    attempts = list(servers)
+    random.shuffle(attempts)
 
     timestamp = ts_now()
-    data = run_iperf3_test(server, port, duration, bandwidth, parallel)
+    data = None
+    server_used = None
+    port_used = None
+    for s in attempts:
+        host = s["host"]
+        port = s["port"]
+        logging.info("Trying iperf3 %s:%d (duration=%ds, %dx%s)",
+                     host, port, duration, parallel, bandwidth)
+        data = run_iperf3_test(host, port, duration, bandwidth, parallel)
+        if data:
+            server_used, port_used = host, port
+            break
 
     if data:
         results = parse_iperf3_results(data)
-        line = format_iperf3_line(results, server, duration, parallel, timestamp)
+        line = format_iperf3_line(results, server_used, duration, parallel, timestamp)
 
         if line:
             success = influx_write([line], bucket=bucket)
             if success:
-                logging.info("iperf3 complete: send=%.1f Mbps, recv=%.1f Mbps, "
-                             "jitter=%.2f ms, loss=%.2f%%",
+                logging.info("iperf3 complete via %s:%d: send=%.1f Mbps, "
+                             "recv=%.1f Mbps, jitter=%.2f ms, loss=%.2f%%",
+                             server_used, port_used,
                              results.get("send_mbps", 0),
                              results.get("recv_mbps", 0),
                              results.get("jitter_ms", 0),
@@ -163,9 +158,11 @@ def main():
             else:
                 logging.error("Failed to write iperf3 results")
     else:
-        error_line = f'iperf3,server={escape_tag(server)} error=true {timestamp}'
+        tried = ",".join(f"{s['host']}:{s['port']}" for s in attempts)
+        error_line = f'iperf3,server=none error=true {timestamp}'
         influx_write([error_line], bucket=bucket)
-        logging.error("iperf3 test failed")
+        logging.error("iperf3 test failed against all %d servers (%s)",
+                      len(attempts), tried)
 
 
 if __name__ == "__main__":
