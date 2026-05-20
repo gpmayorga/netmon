@@ -1,0 +1,19 @@
+[Unit]
+Description=NetMon Public IP Checker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/ip_checker.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-ipcheck
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: InfluxDB
+    uid: netmon-influxdb
+    type: influxdb
+    access: proxy
+    url: http://netmon-influxdb:8086
+    jsonData:
+      version: Flux
+      organization: netmon
+      defaultBucket: netmon
+    secureJsonData:
+      token: $INFLUX_TOKEN
+    isDefault: true
+    editable: false

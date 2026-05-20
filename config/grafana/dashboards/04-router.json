@@ -1,0 +1,107 @@
+{
+  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "Router CPU",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 85 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"cpu_percent\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Router Memory",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"memory_percent\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Router Temp",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 75 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"temp_c\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "WAN Port Status",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and (r._field == \"port1_up\" or r._field == \"port2_up\" or r._field == \"port3_up\"))\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])", "refId": "A" }]
+    },
+    {
+      "title": "WAN Port History",
+      "type": "state-timeline",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }] } },
+      "options": { "showValue": "auto", "mergeValues": true, "rowHeight": 0.7 },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and (r._field == \"port1_up\" or r._field == \"port2_up\" or r._field == \"port3_up\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])", "refId": "A" }]
+    },
+    {
+      "title": "Syslog Events Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 9 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["sum"] } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"syslog_event\" and r._field == \"severity_num\")\n  |> group(columns: [\"event_type\"])\n  |> aggregateWindow(every: 15m, fn: count, createEmpty: false)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "SNMP Interface Traffic",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 15 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 15 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"snmp\" and r._field == \"delta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "WAN Events",
+      "type": "table",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 21 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Time", "desc": true }] },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wan_event\" and r._field == \"message\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 30)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Syslog Messages",
+      "type": "table",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 26 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Time", "desc": true }] },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"syslog_event\" and r._field == \"message\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)", "refId": "A" }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["netmon", "router"],
+  "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
+  "time": { "from": "now-24h", "to": "now" },
+  "title": "Router & Syslog",
+  "uid": "netmon-router",
+  "version": 1
+}

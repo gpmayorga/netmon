@@ -1,0 +1,21 @@
+# Secrets — never commit
+config/secrets.env
+config/*.local.yml
+
+# Persistent service data (InfluxDB TSM files, Grafana SQLite, etc.)
+data/
+
+# Per-script state files (snmp counters, speedtest snooze state, etc.)
+scripts/__pycache__/
+*.pyc
+*.pyo
+
+# Claude-specific local settings (project-wide settings.local.json stays
+# out; CLAUDE.md and any plan docs are tracked deliberately)
+.claude/settings.local.json
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store

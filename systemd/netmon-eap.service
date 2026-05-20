@@ -1,0 +1,19 @@
+[Unit]
+Description=NetMon EAP610 Monitor (Omada AP SSH)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/eap_monitor.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+Restart=always
+RestartSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-eap
+
+[Install]
+WantedBy=multi-user.target

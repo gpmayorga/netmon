@@ -1,0 +1,293 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "title": "Active NetMon Alerts",
+      "type": "alertlist",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "groupBy": [],
+        "showInstances": false,
+        "maxItems": 20,
+        "sortOrder": 3,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "dashboardTitle": "",
+        "folder": { "title": "NetMon", "uid": "" },
+        "tags": [],
+        "stateFilter": {
+          "firing": true,
+          "pending": true,
+          "noData": false,
+          "normal": false,
+          "error": true
+        }
+      }
+    },
+    {
+      "title": "Gateway Latency",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 150 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r.target_name == \"gateway\" and r._field == \"rtt_avg\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Internet Latency (avg)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "displayName": "Internet RTT",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 150 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"rtt_avg\" and r.target_name != \"gateway\")\n  |> group()\n  |> mean()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Packet Loss (max)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "displayName": "Worst target (1h)",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: -1h)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"loss_pct\" and r.target_name != \"gateway\")\n  |> mean()\n  |> group()\n  |> max()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Public IP",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } } },
+      "options": { "graphMode": "none", "colorMode": "background", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"public_ip\" and r._field == \"ip\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "WiFi Signal",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dBm",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": -75 },
+              { "color": "green", "value": -60 }
+            ]
+          }
+        }
+      },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"signal_dbm\")\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "WAN Ports",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and (r._field == \"port1_up\" or r._field == \"port2_up\" or r._field == \"port3_up\"))\n  |> last()",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Latency - All Targets",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "pointSize": 3, "showPoints": "auto" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 50 }, { "color": "red", "value": 150 }] }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max", "lastNotNull"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"rtt_avg\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Packet Loss - All Targets",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 20, "pointSize": 5, "showPoints": "auto" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"loss_pct\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Jitter - All Targets",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 22 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "pointSize": 3, "showPoints": "auto" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 30 }] }
+        }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"jitter\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Public IP History",
+      "type": "state-timeline",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 28 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showValue": "always", "mergeValues": true, "rowHeight": 0.8 },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"public_ip\" and r._field == \"ip\")",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Recent Events",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Time", "desc": true }] },
+      "targets": [
+        {
+          "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"syslog_event\" or r._measurement == \"wan_event\")\n  |> filter(fn: (r) => r._field == \"message\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 30)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["netmon", "connectivity"],
+  "templating": {
+    "list": [
+      {
+        "name": "DS_INFLUXDB",
+        "type": "datasource",
+        "query": "influxdb",
+        "current": { "text": "InfluxDB", "value": "InfluxDB" },
+        "hide": 2
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Network Connectivity",
+  "uid": "netmon-connectivity",
+  "version": 2
+}

@@ -1,0 +1,20 @@
+[Unit]
+Description=NetMon WiFi Channel Scanner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root - monitor mode requires it
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/wifi_scanner.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+Restart=always
+RestartSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-wifi-scanner
+
+[Install]
+WantedBy=multi-user.target

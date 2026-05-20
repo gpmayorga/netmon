@@ -1,0 +1,12 @@
+[Unit]
+Description=NetMon SNMP Poller
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/snmp_poller.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+TimeoutStartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-snmp

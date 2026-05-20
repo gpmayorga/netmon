@@ -1,0 +1,120 @@
+{
+  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "Signal Strength",
+      "type": "gauge",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "dBm", "min": -90, "max": -20, "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": -80 }, { "color": "yellow", "value": -70 }, { "color": "green", "value": -55 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"signal_dbm\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Frequency",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "MHz", "color": { "mode": "fixed", "fixedColor": "purple" } } },
+      "options": { "graphMode": "none", "colorMode": "background", "textMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"frequency\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "TX Bitrate",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 100 }, { "color": "green", "value": 300 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"tx_bitrate\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "RX Bitrate",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 100 }, { "color": "green", "value": 300 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"rx_bitrate\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Signal Strength Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "unit": "dBm", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 } }
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max"] } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and r._field == \"signal_dbm\")\n  |> group(columns: [\"ap_location\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "TX/RX Bitrate Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max"] } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_station\" and (r._field == \"tx_bitrate\" or r._field == \"rx_bitrate\"))\n  |> group(columns: [\"ap_location\", \"_field\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "APs per Channel (Last Scan)",
+      "type": "barchart",
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } },
+      "options": { "xField": "channel", "orientation": "vertical", "stacking": "none", "showValue": "always" },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"wifi_channel_summary\" and r._field == \"ap_count\")\n  |> last()\n  |> group()\n  |> sort(columns: [\"channel\"])", "refId": "A" }
+      ]
+    },
+    {
+      "title": "AP Count per Channel Over Time",
+      "description": "Number of neighboring APs detected on each 2.4/5 GHz channel, sampled by the wifi-scanner. Proxy for channel congestion when the WiFi adapter does not expose nl80211 survey/busy counters. Current adapter (Realtek RTL8822BU / rtw_8822bu) does not expose them; an ath9k_htc-based dongle would activate the 'Channel Busy %' panel below.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10, "showPoints": "auto" } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"], "placement": "right" } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_channel_summary\" and r._field == \"ap_count\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"channel\", \"band\"])\n  |> map(fn: (r) => ({ r with _field: \"ch \" + r.channel + \" (\" + r.band + \")\" }))", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Detected APs (Last Scan)",
+      "type": "table",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 25 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "signal_dbm", "desc": true }] },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"wifi_scan_ap\" and r._field == \"signal_dbm\")\n  |> last()\n  |> group()\n  |> sort(columns: [\"_value\"], desc: true)\n  |> limit(n: 50)", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Channel Busy % Over Time (survey-capable adapter only)",
+      "description": "Requires a WiFi adapter whose driver implements nl80211 NL80211_CMD_GET_SURVEY (e.g. ath9k_htc — TP-Link TL-WN722N v1, Alfa AWUS036NHA). Empty on the current Realtek RTL8822BU / rtw_8822bu. Auto-populates with no config change if survey-capable hardware is installed: wifi_scanner.py writes the wifi_channel.busy_pct measurement only when 'iw dev wlanN survey dump' returns channel-utilization counters.",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 32 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "noValue": "no data — adapter driver does not expose nl80211 survey", "custom": { "drawStyle": "line", "fillOpacity": 20 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wifi_channel\" and r._field == \"busy_pct\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": ["netmon", "wifi"],
+  "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
+  "time": { "from": "now-24h", "to": "now" },
+  "title": "WiFi Health",
+  "uid": "netmon-wifi",
+  "version": 2
+}

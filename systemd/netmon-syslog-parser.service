@@ -1,0 +1,19 @@
+[Unit]
+Description=NetMon Syslog Receiver/Parser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/syslog_parser.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-syslog
+
+[Install]
+WantedBy=multi-user.target

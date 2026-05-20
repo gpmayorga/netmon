@@ -1,0 +1,417 @@
+apiVersion: 1
+
+# NetMon alert rules — provisioned, no external notifications.
+# Rules surface in Grafana → Alerting → Alert rules and on the AlertList
+# panel embedded in the Network Connectivity dashboard.
+#
+# Each rule has: query A (Flux) → threshold expression B → condition B.
+# Thresholds mirror config/netmon.yml `thresholds` block — keep in sync if
+# editing one or the other.
+
+groups:
+  - orgId: 1
+    name: NetMon
+    folder: NetMon
+    interval: 1m
+    rules:
+
+      # -----------------------------------------------------------------
+      # 1. Internet packet loss > 1% sustained 5 min (gateway excluded)
+      # -----------------------------------------------------------------
+      - uid: netmon-loss-warn
+        title: Internet packet loss > 1% (5m)
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: connectivity
+        annotations:
+          summary: Mean packet loss over the last 5 minutes exceeded 1% on at least one internet target.
+          runbook: Check 01-connectivity → Packet Loss panel; correlate with public_ip changes (WAN failover) or syslog WAN events.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "ping" and r._field == "loss_pct")
+                  |> filter(fn: (r) => r.target_name != "gateway")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 2. Internet packet loss > 5% sustained 3 min — critical
+      # -----------------------------------------------------------------
+      - uid: netmon-loss-crit
+        title: Internet packet loss > 5% (3m)
+        condition: B
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          category: connectivity
+        annotations:
+          summary: Mean packet loss over the last 3 minutes exceeded 5% on at least one internet target.
+          runbook: Likely active WAN issue; check 01-connectivity, 04-router for WAN port flaps.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 180, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -3m)
+                  |> filter(fn: (r) => r._measurement == "ping" and r._field == "loss_pct")
+                  |> filter(fn: (r) => r.target_name != "gateway")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 3. Gateway unreachable (100% loss for 2 min) — critical
+      # -----------------------------------------------------------------
+      - uid: netmon-gateway-down
+        title: Gateway unreachable (2m)
+        condition: B
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+          category: connectivity
+        annotations:
+          summary: Gateway ping has been 100% loss for 2 minutes — LAN-side problem or ICMP blocked.
+          runbook: Verify gateway IP in config/netmon.yml (ip route). Some routers filter ICMP to CPU by default.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 120, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -2m)
+                  |> filter(fn: (r) => r._measurement == "ping" and r._field == "loss_pct" and r.target_name == "gateway")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gte, params: [99] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 4. Internet latency > 100 ms sustained 5 min
+      # -----------------------------------------------------------------
+      - uid: netmon-latency-warn
+        title: Internet latency > 100ms (5m)
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: connectivity
+        annotations:
+          summary: Mean RTT to internet targets exceeded 100 ms for 5 minutes.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "ping" and r._field == "rtt_avg")
+                  |> filter(fn: (r) => r.target_name != "gateway")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gt, params: [100] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 5. Jitter > 30 ms sustained 5 min
+      # -----------------------------------------------------------------
+      - uid: netmon-jitter-warn
+        title: Jitter > 30ms (5m)
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: connectivity
+        annotations:
+          summary: Mean jitter on internet targets exceeded 30 ms — videocall quality at risk.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "ping" and r._field == "jitter")
+                  |> filter(fn: (r) => r.target_name != "gateway")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gt, params: [30] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 6. Public IP changed (any change in last 5 min)
+      # -----------------------------------------------------------------
+      - uid: netmon-ip-changed
+        title: Public IP changed
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: wan
+        annotations:
+          summary: Public IP changed — likely WAN failover or DHCP renewal.
+          runbook: Cross-reference 01-connectivity → Public IP History; check 04-router for WAN port state changes.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "public_ip" and r._field == "changed")
+                  |> filter(fn: (r) => r._value == true)
+                  |> count()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 7. Speedtest download below expected (50 Mbps)
+      # -----------------------------------------------------------------
+      - uid: netmon-speedtest-low
+        title: Speedtest below expected (<50 Mbps down)
+        condition: B
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: bandwidth
+        annotations:
+          summary: Latest speedtest download under 50 Mbps (threshold from netmon.yml).
+        data:
+          - refId: A
+            relativeTimeRange: { from: 7200, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon_speedtest")
+                  |> range(start: -2h)
+                  |> filter(fn: (r) => r._measurement == "speedtest" and r._field == "download_mbps")
+                  |> last()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: lt, params: [50] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 8. WiFi signal weak (< -75 dBm) sustained 5 min
+      # -----------------------------------------------------------------
+      - uid: netmon-wifi-weak
+        title: WiFi signal weak (< -75 dBm for 5m)
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: wifi
+        annotations:
+          summary: NetMon test station's WiFi signal averaged worse than -75 dBm for 5 min.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "wifi_station" and r._field == "signal_dbm")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: lt, params: [-75] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 9. RPi temperature high (> 70 °C) sustained 5 min
+      # -----------------------------------------------------------------
+      - uid: netmon-rpi-temp
+        title: RPi temperature high (> 70°C for 5m)
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: Raspberry Pi temperature is over 70 °C — thermal throttling risk.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "system" and r._field == "temp_c")
+                  |> mean()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: gt, params: [70] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query
+
+      # -----------------------------------------------------------------
+      # 10. Ping data staleness — no ping rows in last 5 min — CRITICAL
+      # -----------------------------------------------------------------
+      - uid: netmon-ping-stale
+        title: Ping data staleness (no data 5m)
+        condition: B
+        for: 0s
+        # If the query returns no series at all, treat that itself as alerting.
+        noDataState: Alerting
+        execErrState: Error
+        labels:
+          severity: critical
+          category: monitoring
+        annotations:
+          summary: ping_monitor has written no rows in the last 5 minutes — collector likely down.
+          runbook: systemctl status netmon-ping; journalctl -u netmon-ping -n 100.
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: netmon-influxdb
+            model:
+              datasource: { type: influxdb, uid: netmon-influxdb }
+              refId: A
+              query: |
+                from(bucket: "netmon")
+                  |> range(start: -5m)
+                  |> filter(fn: (r) => r._measurement == "ping" and r._field == "rtt_avg")
+                  |> count()
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: B
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+                  operator: { type: and }
+                  query: { params: [] }
+                  reducer: { type: last, params: [] }
+                  type: query

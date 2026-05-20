@@ -1,0 +1,102 @@
+{
+  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "Last Download",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 20 }, { "color": "green", "value": 50 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and r._field == \"download_mbps\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Last Upload",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 10 }, { "color": "green", "value": 30 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and r._field == \"upload_mbps\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Speedtest Ping",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 20 }, { "color": "red", "value": 50 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and r._field == \"latency_ms\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Avg Download (7d)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 20 }, { "color": "green", "value": 50 }] } } },
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["mean"] } },
+      "targets": [{ "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and r._field == \"download_mbps\")\n  |> mean()", "refId": "A" }]
+    },
+    {
+      "title": "Download & Upload Speed",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "Mbps", "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "pointSize": 6, "showPoints": "always" } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min", "max", "lastNotNull"] } },
+      "targets": [
+        { "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and (r._field == \"download_mbps\" or r._field == \"upload_mbps\"))", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Speedtest Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 12 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "lineWidth": 2, "pointSize": 6, "showPoints": "always" } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and r._field == \"latency_ms\")", "refId": "A" }
+      ]
+    },
+    {
+      "title": "iperf3 Load Test Results",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80, "pointSize": 8, "showPoints": "always" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "send_mbps" }, "properties": [{ "id": "unit", "value": "Mbps" }] },
+          { "matcher": { "id": "byName", "options": "recv_mbps" }, "properties": [{ "id": "unit", "value": "Mbps" }] },
+          { "matcher": { "id": "byName", "options": "jitter_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "custom.axisPlacement", "value": "right" }] },
+          { "matcher": { "id": "byName", "options": "loss_pct" }, "properties": [{ "id": "unit", "value": "percent" }, { "id": "custom.axisPlacement", "value": "right" }] }
+        ]
+      },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"iperf3\" and (r._field == \"send_mbps\" or r._field == \"recv_mbps\" or r._field == \"jitter_ms\" or r._field == \"loss_pct\"))", "refId": "A" }
+      ]
+    },
+    {
+      "title": "Speedtest History Table",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 26 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Time", "desc": true }] },
+      "targets": [
+        { "query": "from(bucket: \"netmon_speedtest\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"speedtest\" and (r._field == \"download_mbps\" or r._field == \"upload_mbps\" or r._field == \"latency_ms\"))\n  |> pivot(rowKey: [\"_time\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)", "refId": "A" }
+      ]
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["netmon", "speedtest"],
+  "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
+  "time": { "from": "now-7d", "to": "now" },
+  "title": "Bandwidth & Speedtest",
+  "uid": "netmon-speedtest",
+  "version": 1
+}

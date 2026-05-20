@@ -1,0 +1,10 @@
+[Unit]
+Description=Run NetMon iperf3 load test on Mon/Wed/Fri at 2 AM
+
+[Timer]
+OnCalendar=Mon,Wed,Fri *-*-* 02:00:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

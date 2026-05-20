@@ -1,0 +1,13 @@
+[Unit]
+Description=NetMon Speedtest Runner
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/speedtest_runner.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+TimeoutStartSec=180
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-speedtest

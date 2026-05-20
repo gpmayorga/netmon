@@ -1,0 +1,13 @@
+[Unit]
+Description=NetMon iperf3 Load Simulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/iperf3_simulator.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-iperf3

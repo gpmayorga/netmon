@@ -1,0 +1,19 @@
+[Unit]
+Description=NetMon Router Monitor (Omada SSH)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/netmon/scripts/router_monitor.py
+EnvironmentFile=/opt/netmon/config/secrets.env
+Restart=always
+RestartSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netmon-router
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,114 @@
+{
+  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "title": "CPU Load (1m)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2 }, { "color": "red", "value": 3.5 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"load_1m\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Memory Used",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 5, "x": 5, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 85 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"mem_used_pct\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Disk Used",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 5, "x": 10, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 85 }] } } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"disk_used_pct\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Temperature",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 5, "x": 15, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 70 }] } } },
+      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"temp_c\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Disk Free",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "decgbytes", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 10 }, { "color": "green", "value": 30 }] } } },
+      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"disk_free_gb\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "CPU Load Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system\" and (r._field == \"load_1m\" or r._field == \"load_5m\" or r._field == \"load_15m\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Memory Usage Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"mem_used_pct\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Temperature Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15 },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 70 }] },
+          "color": { "mode": "continuous-GrYlRd" }
+        }
+      },
+      "options": { "tooltip": { "mode": "single" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"system\" and r._field == \"temp_c\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Service Status",
+      "description": "Last time each NetMon collector wrote data. Rows older than 5 min suggest the collector is unhealthy.",
+      "type": "table",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "last_seen", "desc": true }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "last_seen" }, "properties": [{ "id": "unit", "value": "dateTimeAsIso" }] }
+        ]
+      },
+      "targets": [
+        {
+          "query": "ping        = from(bucket: \"netmon\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"ping\"           and r._field == \"rtt_avg\")    |> group() |> last() |> map(fn: (r) => ({service: \"Ping Monitor\",   last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nipcheck     = from(bucket: \"netmon\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"public_ip\"      and r._field == \"ip\")         |> group() |> last() |> map(fn: (r) => ({service: \"IP Checker\",     last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nwifi_sta    = from(bucket: \"netmon\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"wifi_station\"   and r._field == \"signal_dbm\") |> group() |> last() |> map(fn: (r) => ({service: \"WiFi Station\",   last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nwifi_scan   = from(bucket: \"netmon\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"wifi_scan_ap\"   and r._field == \"signal_dbm\") |> group() |> last() |> map(fn: (r) => ({service: \"WiFi Scanner\",   last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nsyslog      = from(bucket: \"netmon\") |> range(start: -24h)|> filter(fn: (r) => r._measurement == \"syslog_event\"   and r._field == \"message\")    |> group() |> last() |> map(fn: (r) => ({service: \"Syslog Parser\",  last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nrouter      = from(bucket: \"netmon\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"router_wan\"     and r._field == \"port1_up\")   |> group() |> last() |> map(fn: (r) => ({service: \"Router Monitor\", last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nsys         = from(bucket: \"netmon\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"system\"         and r._field == \"temp_c\")     |> group() |> last() |> map(fn: (r) => ({service: \"System Metrics\", last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\nspeedtest   = from(bucket: \"netmon_speedtest\") |> range(start: -2h) |> filter(fn: (r) => r._measurement == \"speedtest\" and r._field == \"download_mbps\") |> group() |> last() |> map(fn: (r) => ({service: \"Speedtest\",      last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\niperf3      = from(bucket: \"netmon_speedtest\") |> range(start: -7d) |> filter(fn: (r) => r._measurement == \"iperf3\"    and r._field == \"send_mbps\")     |> group() |> last() |> map(fn: (r) => ({service: \"iperf3 Sim\",     last_seen: r._time})) |> keep(columns: [\"service\", \"last_seen\"])\n\nunion(tables: [ping, ipcheck, wifi_sta, wifi_scan, syslog, router, sys, speedtest, iperf3])",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["netmon", "system"],
+  "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
+  "time": { "from": "now-24h", "to": "now" },
+  "title": "System Health",
+  "uid": "netmon-system",
+  "version": 1
+}
