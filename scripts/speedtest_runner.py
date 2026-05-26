@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, ts_now
+from common import load_config, influx_write, setup_logging, escape_tag, ts_now, TestMarker
 
 LOG_NAME = "speedtest"
 STATE_FILE = "/opt/netmon/data/speedtest_state.json"
@@ -172,7 +172,8 @@ def main():
     )
 
     timestamp = ts_now()
-    data = run_speedtest(server_id, timeout=timeout)
+    with TestMarker("speedtest"):
+        data = run_speedtest(server_id, timeout=timeout)
 
     if data:
         line = format_speedtest_line(data, window_name, timestamp)

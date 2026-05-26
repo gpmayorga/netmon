@@ -10,7 +10,7 @@ import logging
 import random
 import subprocess
 
-from common import load_config, influx_write, setup_logging, escape_tag, ts_now
+from common import load_config, influx_write, setup_logging, escape_tag, ts_now, TestMarker
 
 LOG_NAME = "iperf3_sim"
 
@@ -170,15 +170,16 @@ def main():
     data = None
     server_used = None
     port_used = None
-    for s in attempts:
-        host = s["host"]
-        port = s["port"]
-        logging.info("Trying iperf3 %s:%d (duration=%ds, %dx%s)",
-                     host, port, duration, parallel, bandwidth)
-        data = run_iperf3_test(host, port, duration, bandwidth, parallel)
-        if data:
-            server_used, port_used = host, port
-            break
+    with TestMarker("iperf3"):
+        for s in attempts:
+            host = s["host"]
+            port = s["port"]
+            logging.info("Trying iperf3 %s:%d (duration=%ds, %dx%s)",
+                         host, port, duration, parallel, bandwidth)
+            data = run_iperf3_test(host, port, duration, bandwidth, parallel)
+            if data:
+                server_used, port_used = host, port
+                break
 
     if data:
         results = parse_iperf3_results(data)

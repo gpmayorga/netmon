@@ -53,6 +53,15 @@ fi
 info "Creating directory structure..."
 mkdir -p "$NETMON_DIR"/{config/grafana/provisioning/{datasources,dashboards,alerting},config/grafana/dashboards,config/rsyslog,scripts,systemd,data/{influxdb,influxdb-config,grafana}}
 mkdir -p "$LOG_DIR"
+
+# /run/netmon — ephemeral coordination between log_event.sh (writes the marker)
+# and ping_monitor.py (reads it to tag config-induced incidents as synthetic).
+# 1777 = sticky world-writable so non-root invocations of log_event.sh from
+# pi shell can write the marker. systemd-tmpfiles recreates this on each boot.
+cat > /etc/tmpfiles.d/netmon.conf <<'TMPFILES'
+d /run/netmon 1777 root root -
+TMPFILES
+systemd-tmpfiles --create /etc/tmpfiles.d/netmon.conf
 ok "Directories created"
 
 # -------------------------------------------------------------------------
@@ -209,6 +218,15 @@ ok "Static checks passed"
 info "Installing systemd services..."
 cp "$NETMON_DIR"/systemd/*.service /etc/systemd/system/ 2>/dev/null || true
 cp "$NETMON_DIR"/systemd/*.timer /etc/systemd/system/ 2>/dev/null || true
+
+# /run/netmon holds short-lived markers (last_event_ts, test_running) shared
+# between log_event.sh, the test runners, and ping_monitor. Living in /run
+# means it disappears at reboot; tmpfiles.d recreates it.
+cat > /etc/tmpfiles.d/netmon.conf <<'EOF'
+d /run/netmon 0755 root root -
+EOF
+systemd-tmpfiles --create /etc/tmpfiles.d/netmon.conf 2>/dev/null || mkdir -p /run/netmon
+
 systemctl daemon-reload
 
 # Enable and start daemon services

@@ -33,7 +33,7 @@ services:
     container_name: netmon-grafana
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     volumes:
       - /opt/netmon/data/grafana:/var/lib/grafana
       - /opt/netmon/config/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -43,7 +43,10 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_AUTH_ANONYMOUS_HIDE_VERSION=true
       - GF_INSTALL_PLUGINS=
       - INFLUX_TOKEN=${INFLUX_TOKEN}
     mem_limit: 256m

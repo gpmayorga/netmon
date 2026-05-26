@@ -11,7 +11,7 @@ import re
 import subprocess
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
+from common import load_config, get_active_profile, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
 
 LOG_NAME = "wifi_station"
 
@@ -340,9 +340,12 @@ def main():
     config = load_config()
     wifi_cfg = config.get("wifi_station", {})
     interval = wifi_cfg.get("interval", 30)
-    interface = wifi_cfg.get("interface", "wlan0")
+    # Profile's client_interface wins so wifi_station follows the active network
+    # (wlan0 for eito, wlan1 for eito_plus). Fall back to legacy wifi_station.interface.
+    profile = get_active_profile()
+    interface = profile.get("client_interface") or wifi_cfg.get("interface", "wlan0")
 
-    logging.info("Interface: %s, interval: %ds", interface, interval)
+    logging.info("Interface: %s (from profile.client_interface), interval: %ds", interface, interval)
 
     while True:
         try:

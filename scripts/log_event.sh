@@ -64,4 +64,13 @@ curl -sf -X POST \
     -H "Content-Type: text/plain; charset=utf-8" \
     --data-binary "$LINE" > /dev/null
 
+# Marker for ping_monitor's settle window: only for live events (no --at) and
+# only for categories that disrupt the network. ping_monitor tags incidents in
+# the next event_settle_seconds as synthetic so a roaming/re-assoc storm right
+# after a config change doesn't pollute the headline incident count.
+if [ -z "$CUSTOM_TS" ] && { [ "$CATEGORY" = "config" ] || [ "$CATEGORY" = "hw" ]; }; then
+    mkdir -p /run/netmon 2>/dev/null || true
+    printf '%s %s\n' "$TS" "$CATEGORY" > /run/netmon/last_event_ts 2>/dev/null || true
+fi
+
 echo "[event] ${CATEGORY}: ${DESC}"

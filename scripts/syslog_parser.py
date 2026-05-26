@@ -10,7 +10,7 @@ import re
 import socket
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
+from common import load_config, get_active_profile, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
 
 LOG_NAME = "syslog_parser"
 
@@ -100,6 +100,13 @@ def format_syslog_line(parsed, event_type, source_ip, timestamp):
 def main():
     setup_logging(LOG_NAME)
     logging.info("Starting syslog receiver")
+
+    profile = get_active_profile()
+    if not profile["omada"]["enabled"]:
+        logging.info("Active profile has omada.enabled=false — syslog parser is idle "
+                     "(no Omada router to receive syslog from).")
+        while True:
+            time.sleep(3600)
 
     config = load_config()
     syslog_cfg = config.get("syslog", {})

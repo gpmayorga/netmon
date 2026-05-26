@@ -24,7 +24,7 @@ import os
 import re
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, ts_now
+from common import load_config, get_active_profile, influx_write, setup_logging, escape_tag, ts_now
 from ssh_helper import run_commands
 
 LOG_NAME = "eap_monitor"
@@ -217,16 +217,11 @@ def format_vap_line(host, name, row, timestamp):
     return f"eap_vap,{tags} {','.join(fields)} {timestamp}"
 
 
-def _resolve_hosts(eap_cfg):
-    """Build a list of (host, name) tuples from config. Tolerates the old
-    single-`host` form so a stale config doesn't break the service."""
-    hosts = eap_cfg.get("hosts")
-    if hosts:
-        return [(h["host"], h.get("name") or h["host"]) for h in hosts if h.get("host")]
-    legacy = eap_cfg.get("host")
-    if legacy:
-        return [(legacy, legacy)]
-    return []
+def _resolve_hosts(eap_hosts):
+    """Build a list of (host, name) tuples from the profile's eap_hosts list."""
+    if not eap_hosts:
+        return []
+    return [(h["host"], h.get("name") or h["host"]) for h in eap_hosts if h.get("host")]
 
 
 def poll_one_host(ssh_user_host, password, ssh_port, host, name, commands, timestamp):
@@ -284,6 +279,12 @@ def main():
     setup_logging(LOG_NAME)
     logging.info("Starting EAP monitor")
 
+    profile = get_active_profile()
+    if not profile["omada"]["enabled"]:
+        logging.info("Active profile has omada.enabled=false — EAP monitor is idle.")
+        while True:
+            time.sleep(3600)
+
     password = (os.environ.get("EAP_SSH_PASSWORD")
                 or os.environ.get("ROUTER_SSH_PASSWORD") or "").strip()
 
@@ -302,10 +303,14 @@ def main():
             eap_cfg = config.get("eap", {})
             interval = int(eap_cfg.get("interval", 60))
             ssh_port = eap_cfg.get("ssh_port")
-            hosts = _resolve_hosts(eap_cfg)
+            # Re-read profile each cycle so config changes (switch_profile.sh)
+            # take effect without restarting the service. If the profile flips
+            # to omada.enabled=false mid-run, we'll just idle on empty hosts.
+            profile = get_active_profile()
+            hosts = _resolve_hosts(profile["omada"].get("eap_hosts", []))
 
             if not hosts:
-                logging.error("No EAP hosts configured under eap.hosts; sleeping")
+                logging.error("No EAP hosts in active profile's omada.eap_hosts; sleeping")
                 time.sleep(interval)
                 continue
             if not user and not eap_user_override:

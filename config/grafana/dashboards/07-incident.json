@@ -7,7 +7,7 @@
         "enable": true,
         "iconColor": "red",
         "name": "Ping Incidents",
-        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> keep(columns: [\"_time\", \"_value\", \"target_name\", \"type\"])\n  |> map(fn: (r) => ({ r with text: r.target_name + \" \" + r.type + \" (max=\" + string(v: r._value) + \"ms)\", tags: r.type })) " }
+        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> filter(fn: (r) => r.synthetic != \"true\")\n  |> keep(columns: [\"_time\", \"_value\", \"target_name\", \"type\"])\n  |> map(fn: (r) => ({ r with text: r.target_name + \" \" + r.type + \" (max=\" + string(v: r._value) + \"ms)\", tags: r.type })) " }
       },
       {
         "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
@@ -42,7 +42,7 @@
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "orange", "value": 10 }, { "color": "red", "value": 50 }] } } },
       "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["sum"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> count()\n  |> group()\n  |> sum()", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> filter(fn: (r) => r.synthetic != \"true\")\n  |> count()\n  |> group()\n  |> sum()", "refId": "A" }]
     },
     {
       "title": "Loss Incidents vs Spike Incidents (24h)",
@@ -50,7 +50,7 @@
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "displayLabels": ["name", "value"] },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> group(columns: [\"type\"])\n  |> count()", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -24h)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> filter(fn: (r) => r.synthetic != \"true\")\n  |> group(columns: [\"type\"])\n  |> count()", "refId": "A" }]
     },
     {
       "title": "Mesh SNR Now",
@@ -132,7 +132,7 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 37 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "options": { "showHeader": true, "sortBy": [{ "displayName": "_time", "desc": true }] },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and (r._field == \"rtt_max\" or r._field == \"loss_pct\" or r._field == \"jitter\"))\n  |> pivot(rowKey: [\"_time\", \"target_name\", \"type\", \"target\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"_time\", \"target_name\", \"type\", \"rtt_max\", \"loss_pct\", \"jitter\"])\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 100)", "refId": "A" }]
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and (r._field == \"rtt_max\" or r._field == \"loss_pct\" or r._field == \"jitter\"))\n  |> pivot(rowKey: [\"_time\", \"target_name\", \"type\", \"target\", \"synthetic\", \"synthetic_cause\"], columnKey: [\"_field\"], valueColumn: \"_value\")\n  |> keep(columns: [\"_time\", \"target_name\", \"type\", \"synthetic\", \"synthetic_cause\", \"rtt_max\", \"loss_pct\", \"jitter\"])\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 100)", "refId": "A" }]
     }
   ],
   "refresh": "30s",

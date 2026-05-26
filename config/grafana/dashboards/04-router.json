@@ -1,107 +1,152 @@
 {
-  "annotations": { "list": [{ "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" }] },
+  "annotations": {
+    "list": [
+      { "builtIn": 1, "datasource": { "type": "grafana", "uid": "-- Grafana --" }, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard" },
+      {
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "enable": true,
+        "iconColor": "green",
+        "name": "Config Changes",
+        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"netmon_event\" and r._field == \"description\")\n  |> keep(columns: [\"_time\", \"_value\", \"category\", \"source\"])\n  |> map(fn: (r) => ({ r with text: r._value, tags: r.category + \",\" + r.source }))" }
+      },
+      {
+        "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+        "enable": true,
+        "iconColor": "red",
+        "name": "Ping Incidents",
+        "target": { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping_incident\" and r._field == \"rtt_max\")\n  |> filter(fn: (r) => r.synthetic != \"true\")\n  |> keep(columns: [\"_time\", \"_value\", \"target_name\", \"type\"])\n  |> map(fn: (r) => ({ r with text: r.target_name + \" \" + r.type + \" (\" + string(v: r._value) + \"ms)\", tags: r.type }))" }
+      }
+    ]
+  },
   "editable": true,
   "graphTooltip": 1,
+  "description": "Router-side telemetry, scoped to what the Omada CLI actually exposes on this firmware (read-only). See docs/omada-cli.md for the full list of probes and dead-ends.",
   "panels": [
     {
-      "title": "Router CPU",
+      "title": "Firmware",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 85 }] } } },
-      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"cpu_percent\")\n  |> last()", "refId": "A" }]
+      "fieldConfig": { "defaults": { "color": { "mode": "fixed", "fixedColor": "blue" } } },
+      "options": { "textMode": "value", "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*firmware.*/" } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"firmware\")\n  |> last()", "refId": "A" }]
     },
     {
-      "title": "Router Memory",
+      "title": "Uptime",
+      "description": "Router uptime in seconds. A sudden drop = the router rebooted. Threshold red if <5 min.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": { "defaults": { "unit": "percent", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 }] } } },
-      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"memory_percent\")\n  |> last()", "refId": "A" }]
+      "fieldConfig": { "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 300 }, { "color": "green", "value": 3600 }] } } },
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"uptime_seconds\")\n  |> last()", "refId": "A" }]
     },
     {
-      "title": "Router Temp",
+      "title": "Active LAN devices",
+      "description": "Devices currently in the router's ARP table on vlan1. Includes infrastructure (the 2 EAPs + the Pi), so subtract 3 for the human-client count. Polled from `show arp` once per cycle.",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": { "defaults": { "unit": "celsius", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 60 }, { "color": "red", "value": 75 }] } } },
-      "options": { "graphMode": "area", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -30m)\n  |> filter(fn: (r) => r._measurement == \"router_info\" and r._field == \"temp_c\")\n  |> last()", "refId": "A" }]
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "grey", "value": null }, { "color": "green", "value": 4 }, { "color": "yellow", "value": 15 }, { "color": "orange", "value": 25 }] } } },
+      "options": { "colorMode": "background", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"router_lan\" and r._field == \"total_devices\")\n  |> last()", "refId": "A" }]
     },
     {
-      "title": "WAN Port Status",
+      "title": "WAN1 (SFP)",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 4, "w": 2, "x": 18, "y": 0 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": {
-        "defaults": {
-          "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }],
-          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
-        }
-      },
-      "options": { "graphMode": "none", "colorMode": "background", "reduceOptions": { "calcs": ["lastNotNull"] } },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -10m)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and (r._field == \"port1_up\" or r._field == \"port2_up\" or r._field == \"port3_up\"))\n  |> last()\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])", "refId": "A" }]
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and r._field == \"port1_up\")\n  |> last()", "refId": "A" }]
     },
     {
-      "title": "WAN Port History",
-      "type": "state-timeline",
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 4 },
+      "title": "WAN2 (Movistar)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 2, "x": 20, "y": 0 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "1": { "text": "UP", "color": "green" }, "0": { "text": "DOWN", "color": "red" } } }] } },
-      "options": { "showValue": "auto", "mergeValues": true, "rowHeight": 0.7 },
-      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and (r._field == \"port1_up\" or r._field == \"port2_up\" or r._field == \"port3_up\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_field\", \"_value\"])", "refId": "A" }]
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and r._field == \"port2_up\")\n  |> last()", "refId": "A" }]
     },
     {
-      "title": "Syslog Events Over Time",
+      "title": "WAN3 (Orange)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 2, "x": 22, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 1 }] } } },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: -5m)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and r._field == \"port3_up\")\n  |> last()", "refId": "A" }]
+    },
+    {
+      "title": "Active LAN devices over time",
+      "description": "Devices in the router's ARP table on vlan1 over time. Peaks correlate with workday occupancy. Drops to ~3 = only infrastructure (overnight). Useful to correlate incident density with people present.",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 9 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 4 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": { "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80 } } },
-      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["sum"] } },
-      "targets": [
-        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"syslog_event\" and r._field == \"severity_num\")\n  |> group(columns: [\"event_type\"])\n  |> aggregateWindow(every: 15m, fn: count, createEmpty: false)", "refId": "A" }
-      ]
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 15, "stepBefore": true } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_lan\" and r._field == \"total_devices\")\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)", "refId": "A" }]
     },
     {
-      "title": "SNMP Interface Traffic",
+      "title": "WAN gateway L2 reachability",
+      "description": "1 = the ISP's upstream gateway answered ARP within the last cycle (= link up at L2). Complements port UP/DOWN: a port can be UP but the upstream ISP gateway unreachable. vlan0 = Movistar (WAN2), vlan4093 = Orange (WAN3).",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 15 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 4 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "fieldConfig": { "defaults": { "unit": "bytes", "custom": { "drawStyle": "line", "fillOpacity": 15 } } },
-      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 25, "stepBefore": true } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "min"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_wan_l2\" and r._field == \"gateway_up\")\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "WAN port UP/DOWN history",
+      "description": "L1/L2 status from `show interface switchport N`. Each line steps between 0 (DOWN) and 1 (UP) so drops are obvious. Cross-reference with the L2 reachability panel above.",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 11 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20, "stepBefore": true } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["min", "mean"] } },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_wan\" and (r._field == \"port1_up\" or r._field == \"port2_up\" or r._field == \"port3_up\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: min, createEmpty: false)", "refId": "A" }]
+    },
+    {
+      "title": "Router-side ping during incidents (Pi-vs-router attribution)",
+      "description": "When ping_monitor detects an incident from the Pi side, wan_ping.py SSH's into the router and pings the same target. If the router's RTT is normal while the Pi's was high, the problem is between Pi and router (WiFi/mesh). If both are high, the problem is upstream of the router. Empty stretches = no incidents (good).",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "points", "pointSize": 8, "lineWidth": 0 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "calcs": ["mean", "max"] } },
       "targets": [
-        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"snmp\" and r._field == \"delta\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)", "refId": "A" }
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"router_ping\" and r._field == \"rtt_avg\")\n  |> group(columns: [\"target\"])\n  |> map(fn: (r) => ({ r with _field: \"Router \\u2192 \" + r.target }))", "refId": "A" },
+        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"ping\" and r._field == \"rtt_avg\" and (r.target_name == \"dns_google\" or r.target_name == \"dns_cloudflare\"))\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> group(columns: [\"target_name\"])\n  |> map(fn: (r) => ({ r with _field: \"Pi \\u2192 \" + r.target_name }))", "refId": "B" }
       ]
     },
     {
-      "title": "WAN Events",
+      "title": "WAN port state changes (events)",
+      "description": "Discrete events when a port flips UP↔DOWN. Empty = no flaps in window (boring is good).",
       "type": "table",
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 21 },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 25 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "options": { "showHeader": true, "sortBy": [{ "displayName": "Time", "desc": true }] },
-      "targets": [
-        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wan_event\" and r._field == \"message\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 30)", "refId": "A" }
-      ]
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "_time", "desc": true }] },
+      "targets": [{ "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"wan_event\" and r._field == \"message\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)\n  |> keep(columns: [\"_time\", \"_value\", \"port\", \"type\"])", "refId": "A" }]
     },
     {
-      "title": "Syslog Messages",
-      "type": "table",
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 26 },
-      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
-      "options": { "showHeader": true, "sortBy": [{ "displayName": "Time", "desc": true }] },
-      "targets": [
-        { "query": "from(bucket: \"netmon\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"syslog_event\" and r._field == \"message\")\n  |> sort(columns: [\"_time\"], desc: true)\n  |> limit(n: 50)", "refId": "A" }
-      ]
+      "title": "Notes",
+      "description": "What this dashboard can and cannot show, given the firmware's constraints.",
+      "type": "text",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 32 },
+      "options": {
+        "mode": "markdown",
+        "content": "**This dashboard is intentionally slim.** The Omada CLI on the ER706W (cloud-managed) exposes essentially no traffic counters, no CPU/memory/temperature, no per-WAN bandwidth metrics, and no syslog. SNMP is disabled and cannot be enabled (firmware quirk — `(config)#` mode is a stub). The Cloud-Based Controller does not expose an Open API for this product line (only the self-hosted Software Controller does, since v5.12).\n\n**What we DO have here:**\n- WAN port L1/L2 status (UP/DOWN per port; ISP gateway ARP reachability)\n- Uptime + firmware version (reboot detection)\n- ARP-derived count of active LAN devices (proxy for workday occupancy)\n- Router-side ping during incidents (Pi-vs-router attribution)\n\n**Traffic / bandwidth measurement lives elsewhere:** the iperf3 collector (Bandwidth dashboard) and ping_monitor at 1 Hz to 5 internet targets (Connectivity dashboard) provide load-balancer hash signals indirectly.\n\nFor the full mapping of Omada CLI capabilities and dead-ends, see `docs/omada-cli.md` in the repo."
+      }
     }
   ],
   "refresh": "1m",
   "schemaVersion": 39,
-  "tags": ["netmon", "router"],
+  "tags": ["netmon", "router", "wan"],
   "templating": { "list": [{ "name": "DS_INFLUXDB", "type": "datasource", "query": "influxdb", "current": { "text": "InfluxDB", "value": "InfluxDB" }, "hide": 2 }] },
   "time": { "from": "now-24h", "to": "now" },
-  "title": "Router & Syslog",
+  "title": "Router & WAN",
   "uid": "netmon-router",
-  "version": 1
+  "version": 2
 }

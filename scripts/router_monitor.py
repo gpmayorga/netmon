@@ -17,7 +17,7 @@ import os
 import re
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
+from common import load_config, get_active_profile, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
 from ssh_helper import run_commands
 
 LOG_NAME = "router_monitor"
@@ -29,6 +29,48 @@ def _port_status_from_text(text):
         if "Routing Interface Status" in line:
             return "UP" if line.rstrip().endswith("UP") else "DOWN"
     return None
+
+
+# `show arp` format:  Interface  IP  MAC  Type  AGE
+_ARP_ROW_RE = re.compile(
+    r"^(vlan\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+([0-9A-Fa-f-]{17})",
+)
+
+
+def parse_arp(text):
+    """Return list of {interface, ip, mac} rows from `show arp` output."""
+    rows = []
+    for line in text.splitlines():
+        m = _ARP_ROW_RE.match(line.strip())
+        if not m:
+            continue
+        rows.append({
+            "interface": m.group(1),
+            "ip": m.group(2),
+            "mac": m.group(3).lower().replace("-", ":"),
+        })
+    return rows
+
+
+def get_arp(ssh_target, password, port=None):
+    outputs = run_commands(ssh_target, password, ["show arp"], timeout_sec=15, port=port)
+    if not outputs:
+        return None
+    return parse_arp(outputs[0])
+
+
+def format_lan_line(arp_rows, timestamp):
+    """Emit a `router_lan,vlan=1 total_devices=N i` point + per-WAN gateway-up flag."""
+    lines = []
+    # LAN device count (vlan1)
+    lan_total = sum(1 for r in arp_rows if r["interface"] == "vlan1")
+    lines.append(f"router_lan,vlan=1 total_devices={lan_total}i {timestamp}")
+    # WAN L2 reachability: presence of an ARP entry on a WAN vlan means the upstream
+    # gateway has responded to ARP, so the link is up at L2. Useful complement to UP/DOWN.
+    for wan_vlan in ("vlan0", "vlan4093"):
+        present = 1 if any(r["interface"] == wan_vlan for r in arp_rows) else 0
+        lines.append(f"router_wan_l2,vlan={wan_vlan} gateway_up={present}i {timestamp}")
+    return lines
 
 
 def _split_kv(line):
@@ -149,6 +191,14 @@ def main():
     setup_logging(LOG_NAME)
     logging.info("Starting router monitor")
 
+    profile = get_active_profile()
+    if not profile["omada"]["enabled"]:
+        logging.info("Active profile has omada.enabled=false — router monitor is idle.")
+        # Sleep forever so systemd doesn't restart-loop. switch_profile.sh
+        # restarts this service when flipping back to an Omada profile.
+        while True:
+            time.sleep(3600)
+
     ssh_target = os.environ.get("ROUTER_SSH", "").strip()
     password = os.environ.get("ROUTER_SSH_PASSWORD", "").strip()
 
@@ -199,6 +249,11 @@ def main():
                 prev_wan = wan
             else:
                 logging.debug("Failed to get WAN status")
+
+            # ARP table — active LAN devices + WAN gateway L2 reachability
+            arp_rows = get_arp(ssh_target, password, port=ssh_port)
+            if arp_rows is not None:
+                lines.extend(format_lan_line(arp_rows, timestamp))
 
             # System info — cadence governed by sysinfo_interval (cycles).
             if cycle_count % max(sysinfo_interval, 1) == 0:

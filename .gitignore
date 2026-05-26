@@ -13,6 +13,7 @@ scripts/__pycache__/
 # Claude-specific local settings (project-wide settings.local.json stays
 # out; CLAUDE.md and any plan docs are tracked deliberately)
 .claude/settings.local.json
+.claude/skills/
 
 # Editor / OS noise
 .vscode/

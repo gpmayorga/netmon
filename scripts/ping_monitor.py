@@ -15,10 +15,12 @@ import statistics
 import subprocess
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, ts_now
+from common import load_config, get_active_profile, influx_write, setup_logging, escape_tag, ts_now
 
 LOG_NAME = "ping_monitor"
 WAN_PING_SCRIPT = "/opt/netmon/scripts/wan_ping.py"
+EVENT_MARKER = "/run/netmon/last_event_ts"
+TEST_MARKER = "/run/netmon/test_running"
 
 
 def compute_stats(rtts, total):
@@ -102,10 +104,14 @@ def format_ping_line(r, timestamp):
     return f"ping,{tags} {fields} {timestamp}"
 
 
-def classify_incident(r, threshold_ms):
-    """Return None or a string label describing why this window is an incident."""
+def classify_incident(r, threshold_ms, loss_min):
+    """Return None or a string label describing why this window is an incident.
+
+    A 'loss' incident requires >= loss_min lost packets in the batch (default 2);
+    a single dropped packet is treated as WiFi background noise, not an incident.
+    """
     has_spike = r["max"] >= threshold_ms
-    has_loss = r["lost"] > 0
+    has_loss = r["lost"] >= loss_min
     if has_spike and has_loss:
         return "spike+loss"
     if has_spike:
@@ -115,13 +121,48 @@ def classify_incident(r, threshold_ms):
     return None
 
 
-def format_incident_line(r, threshold_ms, kind, incident_id, timestamp):
-    """Format a ping_incident line-protocol point."""
+def read_marker_ts(path):
+    """Return the epoch seconds written in `path`, or None if missing/invalid.
+
+    Marker files are written by log_event.sh and the test runners. Format is a
+    single line: "<unix_ts>" or "<unix_ts> <metadata>". We only need the ts.
+    """
+    try:
+        with open(path, "r") as f:
+            return int(f.readline().split()[0])
+    except (IOError, ValueError, IndexError):
+        return None
+
+
+def synthetic_reason(now, event_settle_s, test_max_age_s):
+    """Return a short string explaining why this cycle is 'synthetic', or None.
+
+    Reasons (precedence order):
+      - 'test'           — a speedtest/iperf3 marker is fresh
+      - 'config_settle'  — a config/hw event happened within the settle window
+    """
+    test_ts = read_marker_ts(TEST_MARKER)
+    if test_ts is not None and (now - test_ts) <= test_max_age_s:
+        return "test"
+    event_ts = read_marker_ts(EVENT_MARKER)
+    if event_ts is not None and (now - event_ts) <= event_settle_s:
+        return "config_settle"
+    return None
+
+
+def format_incident_line(r, threshold_ms, kind, incident_id, timestamp, synthetic=None):
+    """Format a ping_incident line-protocol point.
+
+    When `synthetic` is truthy, an extra tag synthetic="true" is added so the
+    dashboard can filter out self-induced or post-config-change spikes.
+    """
     tags = (
         f"target={escape_tag(r['target'])},"
         f"target_name={escape_tag(r['target_name'])},"
         f"type={escape_tag(kind)}"
     )
+    if synthetic:
+        tags += f",synthetic=true,synthetic_cause={escape_tag(synthetic)}"
     fields = (
         f"rtt_max={r['max']},"
         f"rtt_avg={r['avg']},"
@@ -192,7 +233,18 @@ def main():
             period_ms = ping_cfg.get("period_ms", 1000)
             inter_target_ms = ping_cfg.get("inter_target_ms", 50)
             threshold_ms = ping_cfg.get("rtt_threshold_ms", 200)
-            targets_dict = ping_cfg.get("targets", {})
+            loss_min = ping_cfg.get("loss_min_packets", 2)
+            event_settle_s = ping_cfg.get("event_settle_seconds", 90)
+            test_max_age_s = ping_cfg.get("test_marker_max_age_seconds", 180)
+            # Merge profile-specific targets (gateway, eap_mesh) with the
+            # network-agnostic ones (DNS) from `ping.targets`. Null entries on
+            # the profile are skipped — e.g. eito_plus has no eap_mesh.
+            targets_dict = dict(ping_cfg.get("targets", {}))
+            profile = get_active_profile()
+            if profile.get("gateway"):
+                targets_dict["gateway"] = profile["gateway"]
+            if profile.get("eap_mesh"):
+                targets_dict["eap_mesh"] = profile["eap_mesh"]
 
             if not targets_dict:
                 logging.error("No ping targets configured")
@@ -212,24 +264,38 @@ def main():
 
             lines = [format_ping_line(r, timestamp) for r in results]
 
+            # Synthetic detection: are we inside a self-induced test or a
+            # post-config-change settle window? If so, incidents still get
+            # written (for forensic analysis) but with synthetic=true so the
+            # dashboard can drop them from headline counts.
+            synthetic = synthetic_reason(timestamp, event_settle_s, test_max_age_s)
+
             # Incident detection — per-target, but trigger per-WAN ping only once per cycle.
             incident_triggered = False
             incident_id = None
             for r in results:
-                kind = classify_incident(r, threshold_ms)
+                kind = classify_incident(r, threshold_ms, loss_min)
                 if not kind:
                     continue
                 if incident_id is None:
                     incident_id = f"{timestamp}-{r['target_name']}"
-                lines.append(format_incident_line(r, threshold_ms, kind, incident_id, timestamp))
+                lines.append(format_incident_line(
+                    r, threshold_ms, kind, incident_id, timestamp, synthetic=synthetic,
+                ))
                 logging.warning(
-                    "INCIDENT (%s) %s (%s): max=%sms avg=%sms p95=%sms loss=%s%% jitter=%sms",
-                    kind, r["target_name"], r["target"],
+                    "INCIDENT (%s%s) %s (%s): max=%sms avg=%sms p95=%sms loss=%s%% jitter=%sms",
+                    kind, f" synthetic={synthetic}" if synthetic else "",
+                    r["target_name"], r["target"],
                     r["max"], r["avg"], r["p95"], r["loss_pct"], r["jitter"],
                 )
-                # Trigger per-WAN ping only for spikes that suggest an internet-side issue
-                # (any target that's not LAN-only).  wan_ping self-rate-limits.
-                if not incident_triggered and r["target_name"] != "gateway":
+                # Per-WAN ping only for genuine internet-side spikes — skip when
+                # synthetic, otherwise iperf3/speedtest would trigger WAN pings
+                # against themselves. Also skipped on non-Omada profiles since
+                # the router-side back-probe SSHes the Omada gateway.
+                if (not incident_triggered
+                        and r["target_name"] != "gateway"
+                        and not synthetic
+                        and profile["omada"]["enabled"]):
                     trigger_wan_ping(incident_id)
                     incident_triggered = True
 

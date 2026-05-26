@@ -1,6 +1,46 @@
 # NetMon - Coworking Network Monitor Configuration
 # Edit this file and restart the relevant service to apply changes.
 
+# ---------------------------------------------------------------------------
+# Active network profile
+# ---------------------------------------------------------------------------
+# Which network the Pi is currently joined to. Different SSIDs in the building
+# correspond to completely different topologies (Omada-mesh vs direct-wired AP),
+# so per-profile we customize: gateway IP, whether to scrape Omada gear, etc.
+# Switch via `scripts/switch_profile.sh <name>` (logs the event + restarts svcs).
+active_profile: "eito_plus"
+
+# Per-profile config — only the active one is consulted; the others are kept
+# here so switching back is a single line edit.
+profiles:
+  eito:
+    description: "Omada multi-AP mesh (planta-baja + planta-1 + ER706W gateway)"
+    client_interface: "wlan0"         # the Pi's WiFi adapter to use as the station on this network
+    gateway: "192.168.0.1"            # ping target — the local L3 next hop
+    eap_mesh: "192.168.0.100"         # optional second LAN target (the AP we mesh through)
+    omada:
+      enabled: true                   # gates router/eap/syslog/wan_ping scrapers
+      eap_hosts:                      # APs scraped by eap_monitor (SSH)
+        - { host: "192.168.0.100", name: "planta-baja" }
+        - { host: "192.168.0.101", name: "planta-1" }
+    monitor:                          # passive RF environment scanning (wifi_scanner)
+      enabled: false                  # baseline captured 2026-05-20; see docs/wifi-environment-baseline.md
+      interface: "wlan1"              # Realtek RTW8822BU — only interface that supports monitor mode
+      interval: 60                    # seconds between full channel sweeps (was 300 historically;
+                                      # 60 = 5× denser sampling when we re-enable for an investigation)
+
+  eito_plus:
+    description: "Single Ubiquiti U6-Pro wired directly to Movistar router (no Omada involvement)"
+    client_interface: "wlan1"         # USB Realtek RTW8822BU — the only adapter that can see Eito_plus 5 GHz
+    gateway: "192.168.1.1"            # Movistar router on its own subnet
+    eap_mesh: null                    # no equivalent in this topology
+    omada:
+      enabled: false                  # all Omada scrapers idle on this profile
+    monitor:
+      enabled: false                  # wlan1 freed up to be the client on Eito_plus
+      interface: "wlan1"              # (unused when enabled=false, kept for symmetry)
+      interval: 60                    # (same default — used when monitor is re-enabled)
+
 # InfluxDB connection (tokens are in secrets.env, loaded via systemd)
 influxdb:
   url: "http://127.0.0.1:8086"
@@ -19,16 +59,27 @@ ping:
   period_ms: 1000       # ms between pings to the same target (1Hz)
   inter_target_ms: 50   # ms between probes to different targets within a round
   rtt_threshold_ms: 200 # any single RTT >= this triggers a ping_incident
+  # Incident-detector knobs. Tuned 2026-05-20 after finding ~80% of incidents
+  # were either single-packet drops (WiFi background noise) or storms during
+  # config changes / speedtest+iperf3 runs (self-induced contention).
+  loss_min_packets: 2          # need >= N lost packets out of `count` to fire a 'loss' incident
+                               # (1/5 = 20% loss is WiFi baseline; 2/5 = 40% is real)
+  event_settle_seconds: 90     # after a netmon_event with category in {config, hw},
+                               # tag incidents as synthetic=true for N seconds
+                               # (clients reroam/re-associate immediately after a config change)
+  test_marker_max_age_seconds: 180  # ignore /run/netmon/test_running if its mtime is older than this
+                                    # (safety: avoids permanent synthetic-tagging if a test crashed
+                                    #  before removing its marker; longest test is ~120s + buffer)
   # Layered diagnosis with redundancy on the internet side:
-  #   - gateway:  Pi -> router (catches WiFi/LAN)
-  #   - eap_mesh: Pi -> AP (catches mesh backhaul)
+  #   - gateway:  Pi -> router (catches WiFi/LAN) — comes from active profile
+  #   - eap_mesh: Pi -> AP (catches mesh backhaul) — comes from active profile (null on eito_plus)
   #   - five internet targets across providers (Cloudflare, Google, Quad9, Level3):
   #     the Omada load balancer (4:2 Movistar:Orange) will hash flows across WANs,
   #     so if a subset of internet targets degrades while the rest are fine,
   #     one WAN is likely the culprit even though we can't directly isolate it.
+  # Profile-specific gateway + eap_mesh targets are merged in by ping_monitor
+  # at runtime from `profiles.<active_profile>.{gateway,eap_mesh}`.
   targets:
-    gateway: "192.168.0.1"
-    eap_mesh: "192.168.0.100"
     dns_cloudflare: "1.1.1.1"
     dns_cloudflare2: "1.0.0.1"
     dns_google: "8.8.8.8"
@@ -84,6 +135,11 @@ ap_labels:
   "10:5a:95:f5:67:68": "planta-1"      # EAP610 2.4 GHz
   "10:5a:95:f5:67:69": "planta-1"      # EAP610 5 GHz
   "0c:ef:15:da:81:63": "router"        # Omada gateway; should NOT broadcast eito
+  "72:63:f8:28:57:ca": "ubiquiti u6pro"  # U6-Pro 2.4 GHz (Eito_plus, ch 11)
+  "76:63:f8:28:57:cb": "ubiquiti u6pro"  # U6-Pro 5 GHz primary (Eito_plus, ch 149)
+  "6c:63:f8:28:57:ca": "ubiquiti u6pro"  # U6-Pro 2.4 GHz secondary/hidden BSSID
+  "6c:63:f8:28:57:cb": "ubiquiti u6pro"  # U6-Pro 5 GHz secondary/hidden BSSID
+  "72:63:f8:28:57:cb": "ubiquiti u6pro"  # U6-Pro 5 GHz extra BSSID (visitor/guest SSID variant)
 
 # Omada Router SSH monitoring
 # Set ROUTER_SSH and ROUTER_SSH_PASSWORD in secrets.env
@@ -104,16 +160,14 @@ wan_ping:
   targets: ["8.8.8.8", "1.1.1.1"]   # router pings each target (4 packets each)
   min_interval: 30                  # seconds; rate-limit so we don't flood SSH
 
-# EAP610 mesh AP monitoring via SSH (item 7)
+# EAP610 mesh AP monitoring via SSH — Omada-only (gated by active profile's `omada.enabled`)
 # SSH must be enabled site-wide in Omada controller:
 #   Settings -> Site -> Services -> Device Account & SSH
 # Credentials default to ROUTER_SSH_* (same site account); override with EAP_SSH_* in secrets.env
+# The host list lives on the active profile (`profiles.<name>.omada.eap_hosts`).
 eap:
   interval: 60
   ssh_port: 2222        # Omada site-wide SSH port (same as router)
-  hosts:
-    - { host: "192.168.0.100", name: "planta-baja" }
-    - { host: "192.168.0.101", name: "planta-1" }
 
 # Syslog receiver (for Omada router logs)
 syslog:

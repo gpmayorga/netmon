@@ -10,7 +10,7 @@ import re
 import subprocess
 import time
 
-from common import load_config, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
+from common import load_config, get_active_profile, influx_write, setup_logging, escape_tag, escape_field_str, ts_now
 
 LOG_NAME = "wifi_scanner"
 
@@ -295,10 +295,24 @@ def main():
     setup_logging(LOG_NAME)
     logging.info("Starting WiFi scanner")
 
+    # Profile gates whether airspace monitoring is even active. If disabled,
+    # the daemon sleeps so systemd doesn't restart-loop. Re-enable by setting
+    # `monitor.enabled: true` on the active profile in netmon.yml and running
+    # `scripts/switch_profile.sh <profile>` (or just restart this service).
+    profile = get_active_profile()
+    if not profile["monitor"]["enabled"]:
+        logging.info("Active profile has monitor.enabled=false — wifi scanner is idle. "
+                     "Baseline is captured in docs/wifi-environment-baseline.md.")
+        while True:
+            time.sleep(3600)
+
     config = load_config()
     scan_cfg = config.get("wifi_scanner", {})
-    interval = scan_cfg.get("interval", 300)
-    interface = scan_cfg.get("interface", "wlan1")
+    # Profile.monitor takes precedence over the legacy wifi_scanner section for
+    # both interface (which radio) and interval (how often). Falling back to
+    # wifi_scanner.* keeps old configs working.
+    interface = profile["monitor"]["interface"] or scan_cfg.get("interface", "wlan1")
+    interval = profile["monitor"]["interval"] or scan_cfg.get("interval", 300)
 
     logging.info("Interface: %s, interval: %ds", interface, interval)
 

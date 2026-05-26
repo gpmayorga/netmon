@@ -13,8 +13,50 @@ Data flows in one direction: Python collectors → InfluxDB → Grafana.
 - **Python collectors** (`scripts/*.py`) run as systemd units. Each script is a self-contained collector for one signal (ping, WiFi, speedtest, router SSH, syslog, SNMP, iperf3, public-IP check). They write InfluxDB line protocol over HTTP via `common.influx_write()`.
 - **`scripts/common.py`** is the only shared module. It handles: YAML config loading with mtime caching, env-based InfluxDB params, line-protocol writes with retry/backoff, tag/field escaping, and stderr logging (captured by journald). Scripts depend only on stdlib + `pyyaml`; **do not add pip dependencies** — system packages are installed via `apt` in `install.sh`.
 - **Daemon vs. timer services**: long-running collectors (ping, ipcheck, wifi-station, wifi-scanner, syslog-parser, router) are `Type=simple` daemons with their own internal `while True: ... sleep(interval)` loops driven by `netmon.yml`. Periodic jobs (speedtest, iperf3, snmp) are oneshot services triggered by systemd `.timer` units — **do not add a sleep loop to a timer-driven script**.
-- **Docker stack** (`docker-compose.yml`): InfluxDB 2.7 on `127.0.0.1:8086`, Grafana 11 on `127.0.0.1:3000`. Both bind to loopback only; remote access is via Tailscale + SSH tunnel. Grafana dashboards and datasource are provisioned read-only from `config/grafana/`.
+- **Docker stack** (`docker-compose.yml`): InfluxDB 2.7 on `127.0.0.1:8086` (loopback only), Grafana 11 on `0.0.0.0:3000` (reachable from anyone on the `eito` WiFi at `http://192.168.0.171:3000`). Grafana is configured with anonymous Viewer role so coworking staff can open dashboards without logging in; admin login still required to edit. Remote access for tooling is via Tailscale + SSH tunnel. Grafana dashboards and datasource are provisioned read-only from `config/grafana/`.
 - **Two InfluxDB buckets**: `netmon` (30d retention) for high-frequency data, `netmon_speedtest` (90d) for speedtest/iperf3. Pass `bucket=` to `influx_write()` to target the speedtest bucket.
+
+## Hardware inventory (building network)
+
+The coworking building has two coexisting network stacks. NetMon can monitor either via the [profile system](#network-profiles).
+
+**Omada stack** (the "eito" network — managed via Omada Cloud):
+- **TP-Link Omada ER706W** — gateway/router with built-in WiFi 7 tri-band. 192.168.0.0/24 subnet. SSH on port 2222.
+- **2× TP-Link EAP610** APs — wireless mesh backhaul to the gateway (single 5 GHz radio per AP shared between client + mesh). `planta-baja` at 192.168.0.100, `planta-1` at 192.168.0.101. **Powered by standalone wall-plugged PoE injectors** — they are NOT connected to the TL-SG2210MP switch below.
+
+**Ubiquiti stack** (the "Eito_plus" network — UniFi, added by technician 2026-05-20):
+- **Ubiquiti U6-Pro** — single WiFi 6 AP, 2×2 MIMO @ 2.4 GHz + 4×4 MIMO @ 5 GHz, broadcasting `Eito_plus` on 2.4 GHz ch 11 and 5 GHz ch 149.
+- **Ubiquiti UCK G2 SSD Mini** — local UniFi controller server. Manages the U6-Pro.
+- **TP-Link TL-SG2210MP** — 8-port PoE+ switch (150 W budget, 2× SFP), brought in by the technician with the Ubiquiti gear. Powers the U6-Pro (and possibly the UCK) over PoE. The fact that it's an Omada-managed product is incidental — it's being used as a plain PoE+ switch here; it isn't talking to the Omada controller.
+- Wired uplink from the switch into the **Movistar/Telefónica HGU** (the ISP-provided fibre router, 192.168.1.0/24 subnet). Bypasses the Omada gateway entirely.
+
+**The Pi** (NetMon host):
+- `wlan0`: onboard Broadcom (brcmfmac) — managed-mode only (no monitor-mode support). Currently used as the `eito` client on the Omada side.
+- `wlan1`: USB Realtek RTW8822BU — dual-band 2×2 MIMO 802.11ac, supports monitor mode AND managed. Currently used as the `Eito_plus` client (better RF reception than wlan0).
+
+When updating BSSID → location mapping (`ap_labels` in `netmon.yml`), follow the existing convention: EAP610s expose BSSID base + base+1 for 2.4/5; the U6-Pro exposes several BSSIDs per band (primary + hidden mgmt + guest SSID variants), all of which are labeled `ubiquiti u6pro`.
+
+## Network profiles
+
+The building has multiple WiFi networks with very different topologies (Omada mesh on `eito` vs single wired Ubiquiti on `Eito_plus`). NetMon keeps **named profiles** in `config/netmon.yml` so switching the Pi between networks is one command:
+
+```bash
+scripts/switch_profile.sh --list                 # see what's defined
+scripts/switch_profile.sh eito_plus              # switch active profile
+sudo nmcli connection up Eito_plus               # switch Pi's WiFi (separate step)
+```
+
+The profile controls:
+- `ping_monitor`'s gateway + `eap_mesh` ping targets (DNS targets stay the same — network-agnostic)
+- Whether `router_monitor`, `eap_monitor`, `syslog_parser`, and ping-incident-triggered `wan_ping` back-probes do anything (gated on `profiles.<active>.omada.enabled`). When `false`, those daemons idle (`time.sleep(3600)`) so systemd doesn't restart-loop, and dashboards naturally show "no data" for Omada-specific panels.
+- The list of Omada APs scraped by `eap_monitor` (`profiles.<active>.omada.eap_hosts`).
+- Whether the airspace channel scanner (`wifi_scanner`) runs (`profiles.<active>.monitor.enabled`), which interface it uses (`monitor.interface`), and how often (`monitor.interval` — seconds between sweeps). Default state is `enabled: false` — the RF baseline is documented in `docs/wifi-environment-baseline.md` so wlan1 stays free for other use. Re-enable with `enabled: true` + restart `netmon-wifi-scanner` for fresh data when investigating a new incident or after a major environmental change.
+
+Adding a new profile: add a block under `profiles:` in `netmon.yml` with at minimum `gateway:` and `omada.enabled:`. The switch script validates the name exists.
+
+Network-agnostic collectors (`wifi_station`, `wifi_scanner`, `speedtest`, `iperf3`, `ipcheck`) run on any profile — they read Pi-local state or talk to public hosts, so they don't need a profile.
+
+`scripts/switch_profile.sh` logs a `netmon_event` annotation before the change so dashboards mark the boundary. It does NOT switch the Pi's WiFi SSID — that's `nmcli` and is intentionally separate (you might want to test the profile change before disrupting the network connection).
 
 ## Config and secrets
 
@@ -77,6 +119,16 @@ Exit code 0 means all checks passed; `[WARN]` lines don't fail (low-frequency me
 - Timestamps in line protocol are seconds (the write uses `precision=s`). Use `ts_now()`.
 - Catch exceptions inside the main loop so one bad cycle doesn't crash the service — systemd will restart it, but you lose continuity. Pattern: `try: ... except Exception as e: logging.error(..., exc_info=True)` then `time.sleep(interval)` regardless.
 - Log to stderr (default via `setup_logging`); journald captures it.
+
+## Incident log / past investigations
+
+Past network and infrastructure investigations are written up in `docs/incidents/`, one file per incident named `YYYY-MM-DD-short-slug.md`. Each entry captures symptoms, the diagnostic technique that worked, root cause, what was tried (including options considered and rejected), the resulting changes, and follow-ups.
+
+When troubleshooting weird network behaviour, **check `docs/incidents/` first** — many "huh, that's strange" patterns have prior diagnoses and a record of mitigations that worked. Specifically, anything involving widespread ping incidents across multiple targets, 5 GHz contention, mesh behaviour, sticky clients, or DNS-looks-broken-but-isn't almost certainly has precedent there.
+
+Write a new entry when investigating a non-trivial issue, especially ones that required config or topology changes. Keep entries reusable: lead with the diagnostic methodology (the part future-you actually needs), not just the timeline.
+
+`docs/` also holds longer-form reference material (e.g., `docs/omada-cli.md`) that is too long to fit in `CLAUDE.md` or a memory.
 
 ## When adding a new collector
 

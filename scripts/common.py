@@ -37,6 +37,48 @@ def load_config():
         raise
 
 
+def get_active_profile():
+    """Return the dict for the currently-active network profile.
+
+    Reads `active_profile` (a name) and `profiles.<name>` (the config dict)
+    from netmon.yml. Always returns a dict; missing values default to a
+    permissive shape so scripts can rely on:
+        prof["gateway"]            -> str or None
+        prof["eap_mesh"]           -> str or None
+        prof["omada"]["enabled"]   -> bool
+        prof["omada"]["eap_hosts"] -> list (possibly empty)
+
+    Logs a warning and returns an empty/safe profile if config is missing
+    or malformed — scripts should be tolerant of this (idle-skip rather
+    than crash) to keep systemd from restart-looping during a bad edit.
+    """
+    config = load_config()
+    name = config.get("active_profile")
+    profiles = config.get("profiles", {})
+
+    if not name:
+        logging.warning("No active_profile set in netmon.yml; using empty profile")
+        return {"gateway": None, "eap_mesh": None, "omada": {"enabled": False, "eap_hosts": []}}
+    if name not in profiles:
+        logging.warning("active_profile '%s' not found in profiles; using empty profile", name)
+        return {"gateway": None, "eap_mesh": None, "omada": {"enabled": False, "eap_hosts": []}}
+
+    prof = dict(profiles[name])  # shallow copy so callers don't mutate config cache
+    omada = dict(prof.get("omada") or {})
+    omada.setdefault("enabled", False)
+    omada.setdefault("eap_hosts", [])
+    prof["omada"] = omada
+    monitor = dict(prof.get("monitor") or {})
+    monitor.setdefault("enabled", False)
+    monitor.setdefault("interface", None)
+    monitor.setdefault("interval", None)   # None = fall back to wifi_scanner.interval
+    prof["monitor"] = monitor
+    prof.setdefault("gateway", None)
+    prof.setdefault("eap_mesh", None)
+    prof.setdefault("client_interface", None)
+    return prof
+
+
 def get_influx_params():
     """Read InfluxDB connection params from environment and config."""
     config = load_config()
@@ -115,6 +157,39 @@ def escape_field_str(s):
 def ts_now():
     """Return current Unix timestamp as integer (seconds)."""
     return int(time.time())
+
+
+TEST_MARKER_PATH = "/run/netmon/test_running"
+
+
+class TestMarker:
+    """Context manager that tells ping_monitor a self-induced test is running.
+
+    ping_monitor stats /run/netmon/test_running and tags any incidents observed
+    while the marker is fresh as synthetic=true, so speedtest/iperf3-induced
+    contention doesn't pollute the headline incident count.
+
+    Best-effort: all errors swallowed. The marker is a hint, not a lock.
+    """
+
+    def __init__(self, kind):
+        self.kind = kind
+
+    def __enter__(self):
+        try:
+            os.makedirs(os.path.dirname(TEST_MARKER_PATH), exist_ok=True)
+            with open(TEST_MARKER_PATH, "w") as f:
+                f.write(f"{int(time.time())} {self.kind}\n")
+        except OSError as e:
+            logging.debug("TestMarker create failed: %s", e)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            os.remove(TEST_MARKER_PATH)
+        except OSError:
+            pass
+        return False
 
 
 # Import urllib.parse for URL encoding
